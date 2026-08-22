@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.env
+*.pyc
+dist/
+build/
+*.egg-info/
+.coverage
+htmlcov/
+
+# Generated machine-specific editor MCP configs
+.cursor/mcp.json
+.vscode/mcp.json
