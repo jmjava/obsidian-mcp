@@ -81,7 +81,9 @@ def test_tool_flow_writes_readable_markdown(tmp_path: Path) -> None:
     assert "Auto-approve first-party clients only" in note["content"]
     hits = tool_search_memory(vault, "auto-approve", project="spring-auth")
     assert hits
-    daily = tool_append_daily_note(vault, "Reviewed consent flow", heading="Work", date="2026-08-22")
+    daily = tool_append_daily_note(
+        vault, "Reviewed consent flow", heading="Work", date="2026-08-22"
+    )
     assert daily["path"] == "Daily/2026-08-22.md"
 
 

@@ -58,7 +58,10 @@ def _yaml_scalar(value: object) -> str:
     if value is None:
         return "null"
     text = str(value)
-    if text == "" or any(ch in text for ch in ":#{}[],&*?|>!%@`'\"\n"):
+    needs_quotes = text == "" or any(ch in text for ch in "#{}[],&*?|>!%@`'\"\n")
+    needs_quotes = needs_quotes or text.startswith(" ") or text.endswith(" ")
+    needs_quotes = needs_quotes or ": " in text
+    if needs_quotes:
         escaped = text.replace("\\", "\\\\").replace('"', '\\"')
         return f'"{escaped}"'
     return text
@@ -121,8 +124,8 @@ def bullet_list(items: Sequence[str] | None) -> str:
     return "\n".join(lines)
 
 
-def section(title: str, body: str | Sequence[str] | None) -> str:
-    """Render a ``## title`` section, or an empty string when the body is empty."""
+def section(title: str, body: str | Sequence[str] | None, *, level: int = 2) -> str:
+    """Render a heading section, or an empty string when the body is empty."""
     if body is None:
         return ""
     if isinstance(body, (list, tuple)):
@@ -131,7 +134,8 @@ def section(title: str, body: str | Sequence[str] | None) -> str:
         rendered = redact_secrets(str(body).strip())
     if not rendered:
         return ""
-    return f"## {title}\n\n{rendered}"
+    hashes = "#" * min(max(level, 1), 6)
+    return f"{hashes} {title}\n\n{rendered}"
 
 
 def join_blocks(*blocks: str) -> str:

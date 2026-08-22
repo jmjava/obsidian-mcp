@@ -427,12 +427,12 @@ class Vault:
                 git_lines.append("Changed files: " + ", ".join(git_info.changed_files))
         return join_blocks(
             f"## {format_heading_time(now)}",
-            section("Summary", summary),
-            section("Git", git_lines or None),
-            section("Changes", changes),
-            section("Decisions", decisions),
-            section("Open Questions", open_questions),
-            section("Next Steps", next_steps),
+            section("Summary", summary, level=3),
+            section("Git", git_lines or None, level=3),
+            section("Changes", changes, level=3),
+            section("Decisions", decisions, level=3),
+            section("Open Questions", open_questions, level=3),
+            section("Next Steps", next_steps, level=3),
         ).rstrip()
 
     def _compact(self, text: str) -> str:

@@ -103,7 +103,7 @@ print(json.dumps({
     },
 }))
 PY
-)""
+)"
 
 echo "Installing obsidian-dev-memory into $PROJECT"
 echo "  MCP server: $SERVER_ROOT"

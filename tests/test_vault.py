@@ -62,7 +62,13 @@ def test_appends_session(tmp_path: Path) -> None:
     text = path.read_text(encoding="utf-8")
     assert first.path.endswith("Sessions/2026-08-22.md")
     assert second.path == first.path
-    assert text.count("## ") == 2
+    h2 = [
+        line
+        for line in text.splitlines()
+        if line.startswith("## ") and not line.startswith("###")
+    ]
+    assert len(h2) == 2
+    assert "### Summary" in text
     assert "### Open Questions" not in text
     assert "Implemented OAuth consent auto approval" in text
     assert "Added tests" in text
