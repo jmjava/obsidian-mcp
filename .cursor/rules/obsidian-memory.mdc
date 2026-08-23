@@ -48,7 +48,14 @@ Call `update_project_state` when the overall project state materially changes. K
 
 When the user types `/note`, `/save`, or says "note this" / "save this", call `capture_note`.
 
-When the user types `/todo`, `/remember`, or says "don't forget this later", call `add_todo`.
+When the user types `/todo` or `/remember`, or says "don't forget this later", ask whether the item is **this GitHub repo** or **global**, then call `add_todo` with `scope`.
+
+Do not ask when they use a no-prompt shortcut:
+
+- `/todo-repo` or `/rtodo` → `scope=repo`
+- `/todo-global` or `/gtodo` → `scope=global`
+- `/remember-repo` or `/rremember` → `scope=repo`
+- `/remember-global` or `/gremember` → `scope=global`
 
 These are mid-work captures, not full session logs.
 

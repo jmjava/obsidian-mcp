@@ -55,6 +55,7 @@ def test_get_project_context_returns_empty_sections(tmp_path: Path) -> None:
     assert result["recent_sessions"] == []
     assert result["recent_decisions"] == []
     assert result["open_todos"] == []
+    assert result["global_todos"] == []
 
 
 def test_tool_flow_writes_readable_markdown(tmp_path: Path) -> None:
@@ -101,11 +102,18 @@ def test_tool_flow_writes_readable_markdown(tmp_path: Path) -> None:
         title="Follow up",
         now=STAMP,
     )
-    todo = tool_add_todo(vault, "spring-auth", "Verify refresh-token flow", now=STAMP)
-    todos = tool_list_todos(vault, "spring-auth")
+    todo = tool_add_todo(
+        vault,
+        "Verify refresh-token flow",
+        scope="repo",
+        project="spring-auth",
+        now=STAMP,
+    )
+    todos = tool_list_todos(vault, scope="repo", project="spring-auth")
     assert note["path"].endswith("Notes/2026-08-22.md")
     assert todo["path"].endswith("Todos.md")
-    assert any("refresh-token" in item for item in todos["open"])
+    assert todo["scope"] == "repo"
+    assert any("refresh-token" in item for item in todos["lists"][0]["open"])
     found = tool_search_notes(vault, "refresh-token", project="spring-auth")
     assert found
     context = tool_get_project_context(vault, "spring-auth")

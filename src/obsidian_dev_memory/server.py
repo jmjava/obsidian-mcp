@@ -24,7 +24,9 @@ Prefer updating existing project memory rather than creating duplicate notes.
 Call get_project_context before substantial work. Do not record typo fixes,
 formatting-only changes, or one-line mechanical edits.
 
-Use capture_note for /note and /save. Use add_todo for /todo and /remember.
+Use capture_note for /note and /save. Use add_todo for todos.
+For /todo or /remember, ask whether the item is repo-scoped or global
+unless the user used /todo-repo, /todo-global, /rtodo, or /gtodo.
 Use search_notes and list_todos before guessing about earlier reminders.
 """.strip()
 
@@ -178,17 +180,42 @@ def create_server(vault: Vault | None = None) -> Any:
         ).to_dict()
 
     @mcp.tool()
-    def add_todo(project: str, content: str) -> dict[str, Any]:
-        """Add an open checkbox reminder to the project Todos.md file.
+    def add_todo(
+        content: str,
+        scope: str,
+        project: str | None = None,
+        repository_path: str | None = None,
+    ) -> dict[str, Any]:
+        """Add an open checkbox reminder.
 
-        Used by /todo and /remember for don't-forget-this-later items.
+        scope must be ``repo`` or ``global``. Repo todos are stored under
+        the GitHub repository (from repository_path) or project name.
+        Global todos go to AI Memory/Todos.md.
+
+        If the user has not chosen a scope, ask first. Shortcuts that skip
+        the prompt: /todo-repo, /todo-global, /rtodo, /gtodo.
         """
-        return active_vault.add_todo(project=project, content=content).to_dict()
+        return active_vault.add_todo(
+            content,
+            scope=scope,
+            project=project,
+            repository_path=repository_path,
+        ).to_dict()
 
     @mcp.tool()
-    def list_todos(project: str, include_done: bool = True) -> dict[str, Any]:
-        """List open and completed checkbox items from the project todo note."""
-        return active_vault.list_todos(project, include_done=include_done).to_dict()
+    def list_todos(
+        scope: str = "all",
+        project: str | None = None,
+        repository_path: str | None = None,
+        include_done: bool = True,
+    ) -> dict[str, Any]:
+        """List todos. scope is ``repo``, ``global``, or ``all``."""
+        return active_vault.list_todos(
+            scope=scope,
+            project=project,
+            repository_path=repository_path,
+            include_done=include_done,
+        )
 
     @mcp.tool()
     def search_notes(
@@ -341,17 +368,35 @@ def tool_capture_note(
 
 def tool_add_todo(
     vault: Vault,
-    project: str,
     content: str,
+    *,
+    scope: str,
+    project: str | None = None,
+    repository_path: str | None = None,
     now: Any | None = None,
 ) -> dict[str, Any]:
-    return vault.add_todo(project=project, content=content, now=now).to_dict()
+    return vault.add_todo(
+        content,
+        scope=scope,
+        project=project,
+        repository_path=repository_path,
+        now=now,
+    ).to_dict()
 
 
 def tool_list_todos(
-    vault: Vault, project: str, include_done: bool = True
+    vault: Vault,
+    scope: str = "all",
+    project: str | None = None,
+    repository_path: str | None = None,
+    include_done: bool = True,
 ) -> dict[str, Any]:
-    return vault.list_todos(project, include_done=include_done).to_dict()
+    return vault.list_todos(
+        scope=scope,
+        project=project,
+        repository_path=repository_path,
+        include_done=include_done,
+    )
 
 
 def tool_search_notes(

@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.1.2 - 2026-08-23
+
+### Added
+
+- Todo scopes: `repo` (GitHub repository) and `global`.
+- `/todo` and `/remember` ask which scope to use.
+- No-prompt shortcuts: `/todo-repo`, `/todo-global`, `/rtodo`, `/gtodo`, and the matching `/remember-*` aliases.
+
 ## 0.1.1 - 2026-08-23
 
 ### Added

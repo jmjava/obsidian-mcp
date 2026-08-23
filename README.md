@@ -200,8 +200,8 @@ It fails clearly when the target project or vault is missing, and it merges MCP 
 | `update_project_state` | Replace the concise project-state note |
 | `search_memory` | Local filename and text search over project memory, notes, and todos |
 | `capture_note` | Append a quick `/note` or `/save` entry to `Notes/YYYY-MM-DD.md` |
-| `add_todo` | Add a don't-forget checkbox to `Todos.md` |
-| `list_todos` | List open and completed project todos |
+| `add_todo` | Add a don't-forget checkbox (`scope` is `repo` or `global`) |
+| `list_todos` | List todos for `repo`, `global`, or `all` |
 | `search_notes` | Search notes, todos, and daily notes for later lookup |
 | `read_note` | Read one vault-relative Markdown file |
 | `append_daily_note` | Append to `Daily/YYYY-MM-DD.md` |
@@ -216,14 +216,15 @@ It fails clearly when the target project or vault is missing, and it merges MCP 
 
 ```text
 AI Memory/
+├── Todos.md                      # global don't-forget list
 └── Projects/
-    └── <project-slug>/
+    └── <owner-repo>/
         ├── Project State.md
         ├── Sessions/
         │   └── YYYY-MM-DD.md
         ├── Notes/
         │   └── YYYY-MM-DD.md
-        ├── Todos.md
+        ├── Todos.md              # this GitHub repo only
         └── Decisions/
             └── YYYY-MM-DD-<decision-slug>.md
 
@@ -241,14 +242,22 @@ While you are working, type `/` in chat:
 | --- | --- |
 | `/note` | Save a short thought with `capture_note` |
 | `/save` | Save the current useful context with `capture_note` |
-| `/todo` | Add an open checkbox to `Todos.md` |
-| `/remember` | Same as `/todo` for "don't forget this later" |
+| `/todo` | Ask **this GitHub repo** vs **global**, then add a checkbox |
+| `/remember` | Same as `/todo`, with a prompt |
+| `/todo-repo` / `/rtodo` | This GitHub repo, no prompt |
+| `/todo-global` / `/gtodo` | Global list, no prompt |
+| `/remember-repo` / `/rremember` | Repo reminder, no prompt |
+| `/remember-global` / `/gremember` | Global reminder, no prompt |
+
+`/todo` and `/remember` ask which list to use unless the message already says "repo" or "global". The short aliases skip that question.
+
+Repo todos use the GitHub `origin` remote (`owner/repo` → `AI Memory/Projects/<owner-repo>/Todos.md`). Global todos go to `AI Memory/Todos.md`.
 
 In Cursor these are Agent Skills under `.cursor/skills/`. They also match natural phrases such as "note this" and "don't forget this later".
 
 In GitHub Copilot / VS Code the same commands are prompt files under `.github/prompts/` (`note.prompt.md` → `/note`).
 
-Later work can find them with `search_notes`, `list_todos`, or the `open_todos` field on `get_project_context`. Check a box in Obsidian when the item is done.
+Later work can find them with `search_notes`, `list_todos` (`scope=all`), or the `open_todos` and `global_todos` fields on `get_project_context`. Check a box in Obsidian when the item is done.
 
 ## Example workflow
 

@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 import logging
+import re
 import subprocess
 from pathlib import Path
 
 from obsidian_dev_memory.models import GitInfo
+
+_GITHUB_REMOTE_RE = re.compile(
+    r"github\.com[:/](?P<owner>[\w.-]+)/(?P<repo>[\w.-]+)",
+    re.IGNORECASE,
+)
 
 logger = logging.getLogger("obsidian_dev_memory")
 
@@ -51,13 +57,25 @@ def collect_git_context(repository_path: str | Path | None) -> GitInfo | None:
         changed_files = _parse_changed_files(porcelain)
         dirty = bool(changed_files) or bool(porcelain.strip())
 
+    origin = _git(["remote", "get-url", "origin"], cwd=repo_root)
     return GitInfo(
         repo_name=repo_root.name,
+        github_repo=parse_github_remote(origin) if origin else None,
         branch=branch,
         short_sha=short_sha,
         dirty=dirty,
         changed_files=changed_files,
     )
+
+
+def parse_github_remote(url: str | None) -> str | None:
+    """Return ``owner/repo`` from a GitHub remote URL, or ``None``."""
+    if not url:
+        return None
+    match = _GITHUB_REMOTE_RE.search(url.strip().removesuffix(".git"))
+    if not match:
+        return None
+    return f"{match.group('owner')}/{match.group('repo')}"
 
 
 def _git(args: list[str], *, cwd: Path) -> str | None:

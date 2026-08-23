@@ -153,7 +153,8 @@ class Vault:
                 self.safe_path(self.memory_root, "Projects", slug, "Decisions"),
                 limit=max(0, recent_decisions),
             ),
-            open_todos=self.list_todos(project).open,
+            open_todos=self._read_todo_list("repo", project=project).open,
+            global_todos=self._read_todo_list("global").open,
         )
 
     def capture_work_session(
@@ -353,46 +354,136 @@ class Vault:
 
     def add_todo(
         self,
-        project: str,
         content: str,
+        *,
+        scope: str,
+        project: str | None = None,
+        repository_path: str | None = None,
         now: datetime | None = None,
     ) -> WriteResult:
-        """Append an open checkbox item to the project Todos.md file."""
+        """Append an open checkbox to a repo-scoped or global Todos.md file."""
         text = redact_secrets(content.strip())
         if not text:
             raise VaultError("Todo content is required")
-        self.ensure_project(project)
+        normalized = self._normalize_todo_scope(scope, allow_all=False)
         stamp = local_now(now)
-        path = self.todos_path(project)
+        if normalized == "global":
+            slug = "global"
+            repo = ""
+            path = self.global_todos_path()
+        else:
+            slug, repo = self._resolve_repo_identity(project, repository_path)
+            self.ensure_project(slug)
+            path = self.todos_path(slug)
         item = f"- [ ] {format_date(stamp)} — {text}"
         created = not path.exists()
         if created:
-            body = join_blocks(
-                format_frontmatter(
-                    {
-                        "type": "todos",
-                        "project": self.project_slug(project),
-                        "updated": format_iso_datetime(stamp),
-                    }
-                ),
-                "# Todos",
-                item,
-            )
+            fields: dict[str, object] = {
+                "type": "todos",
+                "scope": normalized,
+                "project": slug,
+                "updated": format_iso_datetime(stamp),
+            }
+            if repo:
+                fields["repo"] = repo
+            body = join_blocks(format_frontmatter(fields), "# Todos", item)
         else:
             body = join_blocks(self._read_text(path), item)
         self._atomic_write(path, body)
+        label = f"repo {repo}" if repo else ("global" if normalized == "global" else f"repo {slug}")
         return WriteResult(
             path=self.relative_path(path),
             created=created,
-            message="Added todo",
+            message=f"Added {label} todo",
+            scope=normalized,
+            repo=repo,
         )
 
-    def list_todos(self, project: str, include_done: bool = True) -> TodoList:
-        """Return checkbox items from the project todo list."""
-        slug = self.project_slug(project)
-        path = self.todos_path(project)
+    def list_todos(
+        self,
+        scope: str = "repo",
+        project: str | None = None,
+        repository_path: str | None = None,
+        include_done: bool = True,
+    ) -> dict[str, object]:
+        """Return todo lists for ``repo``, ``global``, or ``all`` scopes."""
+        normalized = self._normalize_todo_scope(scope, allow_all=True)
+        lists: list[TodoList] = []
+        if normalized in {"repo", "all"}:
+            if normalized == "repo" or project or repository_path:
+                lists.append(
+                    self._read_todo_list(
+                        "repo",
+                        project=project,
+                        repository_path=repository_path,
+                        include_done=include_done,
+                    )
+                )
+        if normalized in {"global", "all"}:
+            lists.append(self._read_todo_list("global", include_done=include_done))
+        return {"scope": normalized, "lists": [item.to_dict() for item in lists]}
+
+    def todos_path(self, project: str) -> Path:
+        slug = self.project_slug(project) if project != "global" else project
+        if project == "global":
+            return self.global_todos_path()
+        return self.safe_path(self.memory_root, "Projects", slug, "Todos.md")
+
+    def global_todos_path(self) -> Path:
+        return self.safe_path(self.memory_root, "Todos.md")
+
+    def _normalize_todo_scope(self, scope: str, *, allow_all: bool) -> str:
+        normalized = (scope or "").strip().lower()
+        allowed = {"repo", "global", "all"} if allow_all else {"repo", "global"}
+        if normalized not in allowed:
+            choices = "', '".join(sorted(allowed))
+            raise VaultError(
+                f"scope must be '{choices}'. "
+                "Use /todo to be asked, or /todo-repo /todo-global /rtodo /gtodo to skip."
+            )
+        return normalized
+
+    def _resolve_repo_identity(
+        self, project: str | None, repository_path: str | None
+    ) -> tuple[str, str]:
+        github: str | None = None
+        git_name: str | None = None
+        if repository_path:
+            info = collect_git_context(repository_path)
+            if info is not None:
+                github = info.github_repo
+                git_name = info.repo_name
+        if github:
+            owner, repo = github.split("/", 1)
+            return f"{slugify(owner)}-{slugify(repo)}", github
+        if project and project.strip():
+            return self.project_slug(project), ""
+        if git_name:
+            return slugify(git_name), ""
+        raise VaultError(
+            "Repo-scoped todos need a GitHub repository or project name. "
+            "Pass repository_path or project, or use scope='global'. "
+            "Shortcuts: /todo-repo, /todo-global, /rtodo, /gtodo."
+        )
+
+    def _read_todo_list(
+        self,
+        scope: str,
+        project: str | None = None,
+        repository_path: str | None = None,
+        include_done: bool = True,
+    ) -> TodoList:
+        if scope == "global":
+            slug = "global"
+            repo = ""
+            path = self.global_todos_path()
+        else:
+            slug, repo = self._resolve_repo_identity(project, repository_path)
+            path = self.todos_path(slug)
         if not path.exists() or not path.is_file():
-            return TodoList(project=slug, path=self.relative_path(path))
+            return TodoList(
+                scope=scope, project=slug, path=self.relative_path(path), repo=repo
+            )
         open_items: list[str] = []
         done_items: list[str] = []
         for line in self._read_text(path).splitlines():
@@ -404,15 +495,13 @@ class Vault:
             if done_match and include_done:
                 done_items.append(done_match.group(1).strip())
         return TodoList(
+            scope=scope,
             project=slug,
             path=self.relative_path(path),
+            repo=repo,
             open=open_items,
             done=done_items if include_done else [],
         )
-
-    def todos_path(self, project: str) -> Path:
-        slug = self.project_slug(project)
-        return self.safe_path(self.memory_root, "Projects", slug, "Todos.md")
 
     def search_notes(
         self,
@@ -556,7 +645,12 @@ class Vault:
             roots = [
                 self.safe_path(self.memory_root, "Projects"),
                 self.safe_path("Daily"),
+                self.global_todos_path(),
             ]
+        if folder is None or not folder.strip():
+            global_todos = self.global_todos_path()
+            if global_todos not in roots:
+                roots.append(global_todos)
         files: list[Path] = []
         for root in roots:
             if not root.exists():

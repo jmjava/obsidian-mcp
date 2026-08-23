@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -171,12 +172,17 @@ def test_capture_note_and_todo_are_searchable(tmp_path: Path) -> None:
         title="Mobile consent",
         now=STAMP,
     )
-    vault.add_todo("spring-auth", "Don't forget the refresh-token flow", now=STAMP)
+    vault.add_todo(
+        "Don't forget the refresh-token flow",
+        scope="repo",
+        project="spring-auth",
+        now=STAMP,
+    )
     text = (vault.root / note.path).read_text(encoding="utf-8")
     assert "## 11:42 EDT" in text
     assert "### Mobile consent" in text
-    todos = vault.list_todos("spring-auth")
-    assert todos.open[0].startswith("2026-08-22 — Don't forget")
+    todos = vault.list_todos(scope="repo", project="spring-auth")
+    assert todos["lists"][0]["open"][0].startswith("2026-08-22 — Don't forget")
     hits = vault.search_notes("refresh-token", project="spring-auth")
     assert any(hit.path.endswith("Todos.md") for hit in hits)
     context = vault.get_project_context("spring-auth")
@@ -187,3 +193,51 @@ def test_search_notes_rejects_folder_escape(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     with pytest.raises(VaultPathError):
         vault.search_notes("secret", folder="../outside")
+
+
+def test_todo_scopes_repo_and_global(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    repo_item = vault.add_todo(
+        "Repo-only follow-up",
+        scope="repo",
+        project="spring-auth",
+        now=STAMP,
+    )
+    global_item = vault.add_todo(
+        "Cross-project reminder",
+        scope="global",
+        now=STAMP,
+    )
+    assert repo_item.path == "AI Memory/Projects/spring-auth/Todos.md"
+    assert global_item.path == "AI Memory/Todos.md"
+    assert repo_item.scope == "repo"
+    assert global_item.scope == "global"
+    listed = vault.list_todos(scope="all", project="spring-auth")
+    assert listed["scope"] == "all"
+    assert len(listed["lists"]) == 2
+    context = vault.get_project_context("spring-auth")
+    assert any("Repo-only" in item for item in context.open_todos)
+    assert any("Cross-project" in item for item in context.global_todos)
+    with pytest.raises(VaultError, match="scope must be"):
+        vault.add_todo("x", scope="somewhere")
+
+
+def test_repo_todo_uses_github_remote(tmp_path: Path) -> None:
+    repo = tmp_path / "sample-repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "git@github.com:jmjava/obsidian-mcp.git"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    vault = make_vault(tmp_path)
+    result = vault.add_todo(
+        "Ship the installer",
+        scope="repo",
+        repository_path=str(repo),
+        now=STAMP,
+    )
+    assert result.repo == "jmjava/obsidian-mcp"
+    assert result.path == "AI Memory/Projects/jmjava-obsidian-mcp/Todos.md"

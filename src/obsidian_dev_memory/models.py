@@ -11,6 +11,7 @@ class GitInfo:
     """Lightweight Git snapshot. Never includes diffs or file contents."""
 
     repo_name: str | None = None
+    github_repo: str | None = None
     branch: str | None = None
     short_sha: str | None = None
     dirty: bool | None = None
@@ -41,6 +42,7 @@ class ProjectContext:
     recent_sessions: list[MemoryDocument] = field(default_factory=list)
     recent_decisions: list[MemoryDocument] = field(default_factory=list)
     open_todos: list[str] = field(default_factory=list)
+    global_todos: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -49,6 +51,7 @@ class ProjectContext:
             "recent_sessions": [item.to_dict() for item in self.recent_sessions],
             "recent_decisions": [item.to_dict() for item in self.recent_decisions],
             "open_todos": list(self.open_todos),
+            "global_todos": list(self.global_todos),
         }
 
 
@@ -56,8 +59,10 @@ class ProjectContext:
 class TodoList:
     """Open and completed checkbox items from Todos.md."""
 
+    scope: str
     project: str
     path: str
+    repo: str = ""
     open: list[str] = field(default_factory=list)
     done: list[str] = field(default_factory=list)
 
@@ -85,6 +90,8 @@ class WriteResult:
     path: str
     created: bool = True
     message: str = ""
+    scope: str = ""
+    repo: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

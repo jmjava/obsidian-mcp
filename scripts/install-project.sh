@@ -10,10 +10,10 @@ Usage:
 Creates or updates:
   <project>/.cursor/mcp.json
   <project>/.cursor/rules/obsidian-memory.mdc
-  <project>/.cursor/skills/{note,save,todo,remember}/SKILL.md
+  <project>/.cursor/skills/*/SKILL.md
   <project>/.vscode/mcp.json
   <project>/.github/copilot-instructions.md
-  <project>/.github/prompts/{note,save,todo,remember}.prompt.md
+  <project>/.github/prompts/*.prompt.md
 
 Existing unrelated MCP servers are preserved. Machine-specific paths are written
 only into the target project, not into this repository.
@@ -133,16 +133,17 @@ mkdir -p "$(dirname "$COPILOT_DEST")"
 cp "$COPILOT_SRC" "$COPILOT_DEST"
 echo "wrote $COPILOT_DEST"
 
-for skill in note save todo remember; do
+for skill_dir in "$REPO_ROOT"/.cursor/skills/*/; do
+  skill="$(basename "$skill_dir")"
   mkdir -p "$PROJECT/.cursor/skills/$skill"
-  cp "$REPO_ROOT/.cursor/skills/$skill/SKILL.md" "$PROJECT/.cursor/skills/$skill/SKILL.md"
+  cp "$skill_dir/SKILL.md" "$PROJECT/.cursor/skills/$skill/SKILL.md"
   echo "wrote $PROJECT/.cursor/skills/$skill/SKILL.md"
 done
 
 mkdir -p "$PROJECT/.github/prompts"
-for prompt in note save todo remember; do
-  cp "$REPO_ROOT/.github/prompts/${prompt}.prompt.md" "$PROJECT/.github/prompts/${prompt}.prompt.md"
-  echo "wrote $PROJECT/.github/prompts/${prompt}.prompt.md"
+for prompt in "$REPO_ROOT"/.github/prompts/*.prompt.md; do
+  cp "$prompt" "$PROJECT/.github/prompts/$(basename "$prompt")"
+  echo "wrote $PROJECT/.github/prompts/$(basename "$prompt")"
 done
 
 cat <<EOF
@@ -150,15 +151,16 @@ cat <<EOF
 Installed files:
   $PROJECT/.cursor/mcp.json
   $PROJECT/.cursor/rules/obsidian-memory.mdc
-  $PROJECT/.cursor/skills/{note,save,todo,remember}/SKILL.md
+  $PROJECT/.cursor/skills/*/SKILL.md
   $PROJECT/.vscode/mcp.json
   $PROJECT/.github/copilot-instructions.md
-  $PROJECT/.github/prompts/{note,save,todo,remember}.prompt.md
+  $PROJECT/.github/prompts/*.prompt.md
 
 Follow-up:
   1. Confirm uv is on PATH in Cursor and VS Code.
   2. Reload the window or restart MCP servers so tools are discovered.
-  3. In Cursor chat type /note, /save, /todo, or /remember.
+  3. In Cursor chat type /note, /save, /todo (asks repo vs global),
+     or skip the prompt with /rtodo and /gtodo.
   4. Expected tools:
        get_project_context
        capture_work_session

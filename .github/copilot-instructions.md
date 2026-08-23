@@ -14,7 +14,9 @@ Slash commands and prompts:
 
 - `/note` or "note this" → `capture_note`
 - `/save` or "save this" → `capture_note`
-- `/todo` or `/remember` or "don't forget this later" → `add_todo`
+- `/todo` or `/remember` or "don't forget this later" → ask repo vs global, then `add_todo`
+- `/todo-repo` `/rtodo` `/remember-repo` `/rremember` → repo scope, no prompt
+- `/todo-global` `/gtodo` `/remember-global` `/gremember` → global scope, no prompt
 
 ## When to record sessions
 

@@ -1,29 +1,34 @@
 ---
 name: todo
-description: Add a don't-forget-later checkbox to the project Obsidian todo list. Use when the user types /todo or asks to track a follow-up.
+description: Add a don't-forget checkbox after asking whether it is repo-scoped or global. Use for /todo when the user has not already chosen a scope.
 ---
 
 # /todo
 
-Add an open checkbox to `Todos.md` in the Obsidian vault.
+Add an open checkbox with the `obsidian-dev-memory` MCP `add_todo` tool.
 
-## What to capture
+## Ask for scope first
 
-Use the text after `/todo` as the item. If the user did not specify the item, infer one follow-up from the current conversation and confirm it in the tool call.
+Unless the user already chose a scope in this message, ask one question:
 
-Write the item as a future action, for example "Verify refresh-token flow", not a status report.
+- **This GitHub repo** — stored under `AI Memory/Projects/<owner-repo>/Todos.md`
+- **Global** — stored under `AI Memory/Todos.md` and visible across projects
 
-## How to save it
+Do not add the todo until they answer. If they already said "repo", "this repo", "global", or used a shortcut, do not ask.
 
-1. Infer `project` from the workspace folder name unless the user names a project.
-2. Call `add_todo`.
-3. Reply with the vault-relative path and the new checkbox text.
+## After they choose
 
-## Later lookup
+1. Use the text after `/todo` as the item. Write it as a future action.
+2. Call `add_todo` with `scope` set to `repo` or `global`.
+3. For repo scope, pass `repository_path` as the workspace root so the GitHub remote can be detected. If there is no GitHub remote, pass `project` from the folder name.
+4. Reply with scope, GitHub repo if known, and the vault path.
 
-Agents should call `list_todos` or `search_notes` before guessing about open follow-ups. `get_project_context` also returns `open_todos`.
+## Shortcuts that skip this prompt
+
+- `/todo-repo` or `/rtodo` — this GitHub repo
+- `/todo-global` or `/gtodo` — global list
 
 ## Do not
 
 - Persist secrets.
-- Mark items done here. The user can check the box in Obsidian.
+- Guess the scope when `/todo` is used alone.

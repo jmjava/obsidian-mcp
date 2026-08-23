@@ -21,7 +21,7 @@ Keep it short. Do not paste large file contents or diffs.
 
 1. Infer `project` from the workspace folder name unless the user names a project.
 2. Call `capture_note`. Add a short `title` when that helps later search.
-3. If the user clearly asked to remember a follow-up action, also call `add_todo`.
+3. If the user clearly asked to remember a follow-up action, ask repo vs global (or use `/rtodo` / `/gtodo`) and call `add_todo` with `scope`.
 4. Reply with the saved path.
 
 ## Do not

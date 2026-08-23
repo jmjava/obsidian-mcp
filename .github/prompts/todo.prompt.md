@@ -1,11 +1,13 @@
 ---
-description: Add a don't-forget checkbox to the Obsidian todo list
+description: Add a todo after asking repo vs global scope
 agent: agent
 argument-hint: follow-up to track
 ---
 
-Add an open checkbox with the `obsidian-dev-memory` MCP `add_todo` tool.
+Add an open checkbox with `add_todo`.
 
-Use the text after this command as the item. Write it as a future action. Infer `project` from the workspace folder name unless the user names a project.
+If the user did not already choose a scope, ask one question first: this GitHub repo, or global? Do not save until they answer.
 
-Reply with the vault path and checkbox text. Later work should call `list_todos` or `get_project_context` so the item is not forgotten. Never persist secrets.
+Then call `add_todo` with `scope` `repo` or `global`. For repo scope, pass `repository_path` as the workspace root.
+
+Shortcuts that skip the prompt: `/todo-repo`, `/todo-global`, `/rtodo`, `/gtodo`. Never persist secrets.

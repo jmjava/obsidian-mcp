@@ -1,28 +1,26 @@
 ---
 name: remember
-description: Remember something for later in the Obsidian todo list. Use when the user types /remember or says "don't forget this later".
+description: Remember something for later after asking repo vs global scope. Use for /remember or "don't forget this later" when scope is not specified.
 ---
 
 # /remember
 
-Store a don't-forget-this-later reminder as an open checkbox in the project `Todos.md`.
+Store a don't-forget reminder with `add_todo`.
 
-## What to remember
+## Ask for scope first
 
-Use the text after `/remember`. If the user said "don't forget this" without extra text, turn the current point into one concrete reminder.
+Unless the user already chose, ask:
 
-## How to save it
+- **This GitHub repo**
+- **Global** (all work)
 
-1. Infer `project` from the workspace folder name unless the user names a project.
-2. Call `add_todo`.
-3. If the reminder also needs prose context, call `capture_note` with a one-line explanation.
-4. Reply with the saved todo path.
+Do not save until they answer. Shortcuts that skip the prompt: `/remember-repo`, `/remember-global`, `/rremember`, `/gremember`.
 
-## Later lookup
+## After they choose
 
-Call `list_todos` or `get_project_context` at the start of later work so the reminder actually comes back.
+1. Turn their text into one concrete reminder.
+2. Call `add_todo` with `scope` `repo` or `global`.
+3. For repo scope, pass `repository_path` as the workspace root.
+4. Reply with scope and path.
 
-## Do not
-
-- Persist secrets.
-- Create a full decision note unless the user asked for an architecture decision.
+Later work should call `list_todos` with `scope="all"` or use `open_todos` and `global_todos` from `get_project_context`.
