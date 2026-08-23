@@ -8,7 +8,13 @@ Call `get_project_context` before substantial work when prior project memory is 
 
 Do not call it for trivial edits.
 
-Call `search_memory` before guessing about prior decisions. Use `read_note` only when you already have a vault-relative Markdown path.
+Call `search_memory` or `search_notes` before guessing about prior decisions, notes, or reminders. Call `list_todos` so parked follow-ups come back. Use `read_note` only when you already have a vault-relative Markdown path.
+
+Slash commands and prompts:
+
+- `/note` or "note this" → `capture_note`
+- `/save` or "save this" → `capture_note`
+- `/todo` or `/remember` or "don't forget this later" → `add_todo`
 
 ## When to record sessions
 

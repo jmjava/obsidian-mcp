@@ -23,6 +23,9 @@ generic description instead of the literal value.
 Prefer updating existing project memory rather than creating duplicate notes.
 Call get_project_context before substantial work. Do not record typo fixes,
 formatting-only changes, or one-line mechanical edits.
+
+Use capture_note for /note and /save. Use add_todo for /todo and /remember.
+Use search_notes and list_todos before guessing about earlier reminders.
 """.strip()
 
 
@@ -153,10 +156,57 @@ def create_server(vault: Vault | None = None) -> Any:
         project: str | None = None,
         limit: int = 20,
     ) -> list[dict[str, Any]]:
-        """Search project state, sessions, and decisions with local text matching."""
+        """Search project state, sessions, decisions, notes, and todos."""
         return [
             hit.to_dict()
             for hit in active_vault.search_memory(query, project=project, limit=limit)
+        ]
+
+    @mcp.tool()
+    def capture_note(
+        project: str,
+        content: str,
+        title: str | None = None,
+    ) -> dict[str, Any]:
+        """Save a quick working note for later.
+
+        Used by /note and /save. Appends a timestamped entry to
+        Notes/YYYY-MM-DD.md. Never persist secrets.
+        """
+        return active_vault.capture_note(
+            project=project, content=content, title=title
+        ).to_dict()
+
+    @mcp.tool()
+    def add_todo(project: str, content: str) -> dict[str, Any]:
+        """Add an open checkbox reminder to the project Todos.md file.
+
+        Used by /todo and /remember for don't-forget-this-later items.
+        """
+        return active_vault.add_todo(project=project, content=content).to_dict()
+
+    @mcp.tool()
+    def list_todos(project: str, include_done: bool = True) -> dict[str, Any]:
+        """List open and completed checkbox items from the project todo note."""
+        return active_vault.list_todos(project, include_done=include_done).to_dict()
+
+    @mcp.tool()
+    def search_notes(
+        query: str,
+        project: str | None = None,
+        folder: str | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Search working notes, todos, and daily notes for agents.
+
+        Optional folder limits the search to a vault-relative directory.
+        Returns excerpts, not entire files.
+        """
+        return [
+            hit.to_dict()
+            for hit in active_vault.search_notes(
+                query, project=project, folder=folder, limit=limit
+            )
         ]
 
     @mcp.tool()
@@ -277,6 +327,44 @@ def tool_search_memory(
     limit: int = 20,
 ) -> list[dict[str, Any]]:
     return [hit.to_dict() for hit in vault.search_memory(query, project=project, limit=limit)]
+
+
+def tool_capture_note(
+    vault: Vault,
+    project: str,
+    content: str,
+    title: str | None = None,
+    now: Any | None = None,
+) -> dict[str, Any]:
+    return vault.capture_note(project=project, content=content, title=title, now=now).to_dict()
+
+
+def tool_add_todo(
+    vault: Vault,
+    project: str,
+    content: str,
+    now: Any | None = None,
+) -> dict[str, Any]:
+    return vault.add_todo(project=project, content=content, now=now).to_dict()
+
+
+def tool_list_todos(
+    vault: Vault, project: str, include_done: bool = True
+) -> dict[str, Any]:
+    return vault.list_todos(project, include_done=include_done).to_dict()
+
+
+def tool_search_notes(
+    vault: Vault,
+    query: str,
+    project: str | None = None,
+    folder: str | None = None,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    return [
+        hit.to_dict()
+        for hit in vault.search_notes(query, project=project, folder=folder, limit=limit)
+    ]
 
 
 def tool_read_note(vault: Vault, path: str) -> dict[str, str]:

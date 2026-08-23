@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.1.1 - 2026-08-23
+
+### Added
+
+- Slash commands / skills: `/note`, `/save`, `/todo`, `/remember`.
+- MCP tools `capture_note`, `add_todo`, `list_todos`, and `search_notes`.
+- Project `Notes/YYYY-MM-DD.md` and checkbox `Todos.md` files.
+- `get_project_context` now returns `open_todos` so parked reminders come back.
+
 ## 0.1.0 - 2026-08-22
 
 ### Added

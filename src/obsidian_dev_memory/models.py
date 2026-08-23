@@ -40,6 +40,7 @@ class ProjectContext:
     project_state: str = ""
     recent_sessions: list[MemoryDocument] = field(default_factory=list)
     recent_decisions: list[MemoryDocument] = field(default_factory=list)
+    open_todos: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -47,7 +48,21 @@ class ProjectContext:
             "project_state": self.project_state,
             "recent_sessions": [item.to_dict() for item in self.recent_sessions],
             "recent_decisions": [item.to_dict() for item in self.recent_decisions],
+            "open_todos": list(self.open_todos),
         }
+
+
+@dataclass(frozen=True)
+class TodoList:
+    """Open and completed checkbox items from Todos.md."""
+
+    project: str
+    path: str
+    open: list[str] = field(default_factory=list)
+    done: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
 
 @dataclass(frozen=True)

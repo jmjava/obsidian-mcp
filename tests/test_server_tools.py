@@ -11,12 +11,16 @@ import pytest
 from obsidian_dev_memory.server import (
     create_server,
     list_tool_names,
+    tool_add_todo,
     tool_append_daily_note,
+    tool_capture_note,
     tool_capture_work_session,
     tool_get_project_context,
+    tool_list_todos,
     tool_read_note,
     tool_record_decision,
     tool_search_memory,
+    tool_search_notes,
     tool_update_project_state,
 )
 from obsidian_dev_memory.vault import Vault, VaultPathError
@@ -28,6 +32,10 @@ EXPECTED_TOOLS = {
     "record_decision",
     "update_project_state",
     "search_memory",
+    "capture_note",
+    "add_todo",
+    "list_todos",
+    "search_notes",
     "read_note",
     "append_daily_note",
 }
@@ -46,6 +54,7 @@ def test_get_project_context_returns_empty_sections(tmp_path: Path) -> None:
     assert result["project_state"] == ""
     assert result["recent_sessions"] == []
     assert result["recent_decisions"] == []
+    assert result["open_todos"] == []
 
 
 def test_tool_flow_writes_readable_markdown(tmp_path: Path) -> None:
@@ -85,6 +94,22 @@ def test_tool_flow_writes_readable_markdown(tmp_path: Path) -> None:
         vault, "Reviewed consent flow", heading="Work", date="2026-08-22"
     )
     assert daily["path"] == "Daily/2026-08-22.md"
+    note = tool_capture_note(
+        vault,
+        "spring-auth",
+        "Park the consent bypass edge case",
+        title="Follow up",
+        now=STAMP,
+    )
+    todo = tool_add_todo(vault, "spring-auth", "Verify refresh-token flow", now=STAMP)
+    todos = tool_list_todos(vault, "spring-auth")
+    assert note["path"].endswith("Notes/2026-08-22.md")
+    assert todo["path"].endswith("Todos.md")
+    assert any("refresh-token" in item for item in todos["open"])
+    found = tool_search_notes(vault, "refresh-token", project="spring-auth")
+    assert found
+    context = tool_get_project_context(vault, "spring-auth")
+    assert context["open_todos"]
 
 
 def test_read_note_tool_rejects_escape(tmp_path: Path) -> None:

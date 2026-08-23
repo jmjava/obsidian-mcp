@@ -10,8 +10,10 @@ Usage:
 Creates or updates:
   <project>/.cursor/mcp.json
   <project>/.cursor/rules/obsidian-memory.mdc
+  <project>/.cursor/skills/{note,save,todo,remember}/SKILL.md
   <project>/.vscode/mcp.json
   <project>/.github/copilot-instructions.md
+  <project>/.github/prompts/{note,save,todo,remember}.prompt.md
 
 Existing unrelated MCP servers are preserved. Machine-specific paths are written
 only into the target project, not into this repository.
@@ -131,25 +133,44 @@ mkdir -p "$(dirname "$COPILOT_DEST")"
 cp "$COPILOT_SRC" "$COPILOT_DEST"
 echo "wrote $COPILOT_DEST"
 
+for skill in note save todo remember; do
+  mkdir -p "$PROJECT/.cursor/skills/$skill"
+  cp "$REPO_ROOT/.cursor/skills/$skill/SKILL.md" "$PROJECT/.cursor/skills/$skill/SKILL.md"
+  echo "wrote $PROJECT/.cursor/skills/$skill/SKILL.md"
+done
+
+mkdir -p "$PROJECT/.github/prompts"
+for prompt in note save todo remember; do
+  cp "$REPO_ROOT/.github/prompts/${prompt}.prompt.md" "$PROJECT/.github/prompts/${prompt}.prompt.md"
+  echo "wrote $PROJECT/.github/prompts/${prompt}.prompt.md"
+done
+
 cat <<EOF
 
 Installed files:
   $PROJECT/.cursor/mcp.json
   $PROJECT/.cursor/rules/obsidian-memory.mdc
+  $PROJECT/.cursor/skills/{note,save,todo,remember}/SKILL.md
   $PROJECT/.vscode/mcp.json
   $PROJECT/.github/copilot-instructions.md
+  $PROJECT/.github/prompts/{note,save,todo,remember}.prompt.md
 
 Follow-up:
   1. Confirm uv is on PATH in Cursor and VS Code.
   2. Reload the window or restart MCP servers so tools are discovered.
-  3. Expected tools:
+  3. In Cursor chat type /note, /save, /todo, or /remember.
+  4. Expected tools:
        get_project_context
        capture_work_session
        record_decision
        update_project_state
        search_memory
+       capture_note
+       add_todo
+       list_todos
+       search_notes
        read_note
        append_daily_note
-  4. Optional vault override:
+  5. Optional vault override:
        export OBSIDIAN_MEMORY_ROOT="Engineering Memory"
 EOF

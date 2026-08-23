@@ -44,9 +44,17 @@ If a decision file with the same generated name already exists, the server adds 
 
 Call `update_project_state` when the overall project state materially changes. Keep that file concise. It is current state, not a session log.
 
+## Quick notes and todos
+
+When the user types `/note`, `/save`, or says "note this" / "save this", call `capture_note`.
+
+When the user types `/todo`, `/remember`, or says "don't forget this later", call `add_todo`.
+
+These are mid-work captures, not full session logs.
+
 ## Memory lookup
 
-Call `search_memory` before guessing about prior decisions. Use `read_note` only for a specific vault-relative Markdown path.
+Call `search_memory` or `search_notes` before guessing about prior decisions, notes, or reminders. Call `list_todos` or use `open_todos` from `get_project_context` so parked follow-ups come back. Use `read_note` only for a specific vault-relative Markdown path.
 
 ## Daily notes
 

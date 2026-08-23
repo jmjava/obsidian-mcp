@@ -198,7 +198,11 @@ It fails clearly when the target project or vault is missing, and it merges MCP 
 | `capture_work_session` | Append a timestamped section to today's session note |
 | `record_decision` | Write a durable decision note |
 | `update_project_state` | Replace the concise project-state note |
-| `search_memory` | Local filename and text search over project memory |
+| `search_memory` | Local filename and text search over project memory, notes, and todos |
+| `capture_note` | Append a quick `/note` or `/save` entry to `Notes/YYYY-MM-DD.md` |
+| `add_todo` | Add a don't-forget checkbox to `Todos.md` |
+| `list_todos` | List open and completed project todos |
+| `search_notes` | Search notes, todos, and daily notes for later lookup |
 | `read_note` | Read one vault-relative Markdown file |
 | `append_daily_note` | Append to `Daily/YYYY-MM-DD.md` |
 
@@ -217,6 +221,9 @@ AI Memory/
         ├── Project State.md
         ├── Sessions/
         │   └── YYYY-MM-DD.md
+        ├── Notes/
+        │   └── YYYY-MM-DD.md
+        ├── Todos.md
         └── Decisions/
             └── YYYY-MM-DD-<decision-slug>.md
 
@@ -225,6 +232,23 @@ Daily/
 ```
 
 The `AI Memory` folder honors `OBSIDIAN_MEMORY_ROOT`. Logical project names are slugified (`Spring Authorization Server` → `spring-authorization-server`).
+
+## Slash commands
+
+While you are working, type `/` in chat:
+
+| Command | What it does |
+| --- | --- |
+| `/note` | Save a short thought with `capture_note` |
+| `/save` | Save the current useful context with `capture_note` |
+| `/todo` | Add an open checkbox to `Todos.md` |
+| `/remember` | Same as `/todo` for "don't forget this later" |
+
+In Cursor these are Agent Skills under `.cursor/skills/`. They also match natural phrases such as "note this" and "don't forget this later".
+
+In GitHub Copilot / VS Code the same commands are prompt files under `.github/prompts/` (`note.prompt.md` → `/note`).
+
+Later work can find them with `search_notes`, `list_todos`, or the `open_todos` field on `get_project_context`. Check a box in Obsidian when the item is done.
 
 ## Example workflow
 
@@ -271,6 +295,7 @@ The smoke test verifies the environment variable, vault directory, package impor
 | `Path traversal is not allowed` | Pass vault-relative paths such as `AI Memory/Projects/spring-auth/Project State.md` |
 | Decision file name already existed | The server wrote `YYYY-MM-DD-<slug>-2.md` instead of overwriting |
 | Git section missing from a session | `repository_path` was omitted or is not a Git repository; that is non-fatal |
+| `/note` does not appear | Reload the window; confirm `.cursor/skills/note/SKILL.md` exists in the project |
 | Unexpected stdout noise | Only MCP JSON-RPC should use stdout; logs belong on stderr |
 
 ## License

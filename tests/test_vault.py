@@ -23,6 +23,7 @@ def test_creates_project_directories(tmp_path: Path) -> None:
     assert project_dir.name == "spring-auth"
     assert (project_dir / "Sessions").is_dir()
     assert (project_dir / "Decisions").is_dir()
+    assert (project_dir / "Notes").is_dir()
 
 
 def test_writes_project_state(tmp_path: Path) -> None:
@@ -160,3 +161,29 @@ def test_invalid_daily_date_is_rejected(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     with pytest.raises(VaultError, match="YYYY-MM-DD"):
         vault.append_daily_note("x", date="tomorrow")
+
+
+def test_capture_note_and_todo_are_searchable(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    note = vault.capture_note(
+        "spring-auth",
+        "Remember to check first-party consent on mobile",
+        title="Mobile consent",
+        now=STAMP,
+    )
+    vault.add_todo("spring-auth", "Don't forget the refresh-token flow", now=STAMP)
+    text = (vault.root / note.path).read_text(encoding="utf-8")
+    assert "## 11:42 EDT" in text
+    assert "### Mobile consent" in text
+    todos = vault.list_todos("spring-auth")
+    assert todos.open[0].startswith("2026-08-22 — Don't forget")
+    hits = vault.search_notes("refresh-token", project="spring-auth")
+    assert any(hit.path.endswith("Todos.md") for hit in hits)
+    context = vault.get_project_context("spring-auth")
+    assert context.open_todos
+
+
+def test_search_notes_rejects_folder_escape(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    with pytest.raises(VaultPathError):
+        vault.search_notes("secret", folder="../outside")

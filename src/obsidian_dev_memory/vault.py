@@ -29,6 +29,7 @@ from obsidian_dev_memory.models import (
     MemoryDocument,
     ProjectContext,
     SearchHit,
+    TodoList,
     WriteResult,
 )
 
@@ -36,6 +37,11 @@ DEFAULT_MEMORY_ROOT = "AI Memory"
 DEFAULT_CONTEXT_LIMIT = 4000
 DEFAULT_SEARCH_LIMIT = 20
 DEFAULT_EXCERPT_LIMIT = 240
+DEFAULT_LIST_LIMIT = 50
+MAX_NOTE_SCAN = 5000
+_SKIP_DIR_NAMES = {".obsidian", ".trash", ".git", ".smart-env", "__pycache__"}
+_TODO_OPEN_RE = re.compile(r"^- \[ \] (.+)$")
+_TODO_DONE_RE = re.compile(r"^- \[[xX]\] (.+)$")
 
 
 class VaultError(Exception):
@@ -112,9 +118,11 @@ class Vault:
         project_dir = self.safe_path(self.memory_root, "Projects", slug)
         sessions = self.safe_path(self.memory_root, "Projects", slug, "Sessions")
         decisions = self.safe_path(self.memory_root, "Projects", slug, "Decisions")
+        notes = self.safe_path(self.memory_root, "Projects", slug, "Notes")
         project_dir.mkdir(parents=True, exist_ok=True)
         sessions.mkdir(parents=True, exist_ok=True)
         decisions.mkdir(parents=True, exist_ok=True)
+        notes.mkdir(parents=True, exist_ok=True)
         self._assert_inside(project_dir)
         return project_dir
 
@@ -145,6 +153,7 @@ class Vault:
                 self.safe_path(self.memory_root, "Projects", slug, "Decisions"),
                 limit=max(0, recent_decisions),
             ),
+            open_todos=self.list_todos(project).open,
         )
 
     def capture_work_session(
@@ -311,6 +320,133 @@ class Vault:
         hits.sort(key=lambda hit: (-hit.score, hit.path))
         return hits[:limit]
 
+    def capture_note(
+        self,
+        project: str,
+        content: str,
+        title: str | None = None,
+        now: datetime | None = None,
+    ) -> WriteResult:
+        """Append a quick working note for later. Used by /note and /save."""
+        text = redact_secrets(content.strip())
+        if not text:
+            raise VaultError("Note content is required")
+        self.ensure_project(project)
+        stamp = local_now(now)
+        slug = self.project_slug(project)
+        path = self.safe_path(
+            self.memory_root, "Projects", slug, "Notes", f"{format_date(stamp)}.md"
+        )
+        heading = f"## {format_heading_time(stamp)}"
+        if title and title.strip():
+            body = join_blocks(heading, f"### {redact_secrets(title.strip())}", text)
+        else:
+            body = join_blocks(heading, text)
+        existing = self._read_text(path) if path.exists() else ""
+        created = not path.exists()
+        self._atomic_write(path, join_blocks(existing, body))
+        return WriteResult(
+            path=self.relative_path(path),
+            created=created,
+            message="Captured note",
+        )
+
+    def add_todo(
+        self,
+        project: str,
+        content: str,
+        now: datetime | None = None,
+    ) -> WriteResult:
+        """Append an open checkbox item to the project Todos.md file."""
+        text = redact_secrets(content.strip())
+        if not text:
+            raise VaultError("Todo content is required")
+        self.ensure_project(project)
+        stamp = local_now(now)
+        path = self.todos_path(project)
+        item = f"- [ ] {format_date(stamp)} — {text}"
+        created = not path.exists()
+        if created:
+            body = join_blocks(
+                format_frontmatter(
+                    {
+                        "type": "todos",
+                        "project": self.project_slug(project),
+                        "updated": format_iso_datetime(stamp),
+                    }
+                ),
+                "# Todos",
+                item,
+            )
+        else:
+            body = join_blocks(self._read_text(path), item)
+        self._atomic_write(path, body)
+        return WriteResult(
+            path=self.relative_path(path),
+            created=created,
+            message="Added todo",
+        )
+
+    def list_todos(self, project: str, include_done: bool = True) -> TodoList:
+        """Return checkbox items from the project todo list."""
+        slug = self.project_slug(project)
+        path = self.todos_path(project)
+        if not path.exists() or not path.is_file():
+            return TodoList(project=slug, path=self.relative_path(path))
+        open_items: list[str] = []
+        done_items: list[str] = []
+        for line in self._read_text(path).splitlines():
+            open_match = _TODO_OPEN_RE.match(line.strip())
+            if open_match:
+                open_items.append(open_match.group(1).strip())
+                continue
+            done_match = _TODO_DONE_RE.match(line.strip())
+            if done_match and include_done:
+                done_items.append(done_match.group(1).strip())
+        return TodoList(
+            project=slug,
+            path=self.relative_path(path),
+            open=open_items,
+            done=done_items if include_done else [],
+        )
+
+    def todos_path(self, project: str) -> Path:
+        slug = self.project_slug(project)
+        return self.safe_path(self.memory_root, "Projects", slug, "Todos.md")
+
+    def search_notes(
+        self,
+        query: str,
+        project: str | None = None,
+        folder: str | None = None,
+        limit: int = DEFAULT_SEARCH_LIMIT,
+    ) -> list[SearchHit]:
+        """Search working notes, todos, daily notes, and optional vault folders."""
+        terms = [term.lower() for term in re.findall(r"[A-Za-z0-9_-]+", query)]
+        if not terms:
+            return []
+        limit = max(1, limit)
+        hits: list[SearchHit] = []
+        for path in self._iter_note_files(project=project, folder=folder):
+            text = self._try_read_text(path)
+            if text is None:
+                continue
+            score = self._score_note(path, text, terms)
+            if score <= 0:
+                continue
+            hits.append(
+                SearchHit(
+                    path=self.relative_path(path),
+                    title=extract_title(text, path.stem),
+                    matching_excerpt=excerpt_around(
+                        text, terms, limit=DEFAULT_EXCERPT_LIMIT
+                    ),
+                    score=score,
+                )
+            )
+        hits.sort(key=lambda hit: (-hit.score, hit.path))
+        return hits[:limit]
+
     def read_note(self, path: str) -> dict[str, str]:
         target = self.safe_path(path)
         if not target.exists() or not target.is_file():
@@ -387,6 +523,8 @@ class Vault:
                 self.safe_path(self.memory_root, "Projects", slug, "Project State.md"),
                 self.safe_path(self.memory_root, "Projects", slug, "Sessions"),
                 self.safe_path(self.memory_root, "Projects", slug, "Decisions"),
+                self.safe_path(self.memory_root, "Projects", slug, "Notes"),
+                self.safe_path(self.memory_root, "Projects", slug, "Todos.md"),
             ]
         else:
             roots = [self.safe_path(self.memory_root, "Projects")]
@@ -401,6 +539,70 @@ class Vault:
                 if path.is_file() and self._contained(path.resolve()):
                     files.append(path)
         return files
+
+    def _iter_note_files(
+        self, project: str | None = None, folder: str | None = None
+    ) -> list[Path]:
+        if folder and folder.strip():
+            roots = [self.safe_path(folder.strip())]
+        elif project:
+            slug = self.project_slug(project)
+            roots = [
+                self.safe_path(self.memory_root, "Projects", slug, "Notes"),
+                self.safe_path(self.memory_root, "Projects", slug, "Todos.md"),
+                self.safe_path("Daily"),
+            ]
+        else:
+            roots = [
+                self.safe_path(self.memory_root, "Projects"),
+                self.safe_path("Daily"),
+            ]
+        files: list[Path] = []
+        for root in roots:
+            if not root.exists():
+                continue
+            if root.is_file() and root.suffix.lower() == ".md":
+                if self._is_searchable_note(root):
+                    files.append(root)
+                continue
+            if not root.is_dir():
+                continue
+            for path in root.rglob("*.md"):
+                if len(files) >= MAX_NOTE_SCAN:
+                    return files
+                if path.is_file() and self._is_searchable_note(path):
+                    files.append(path)
+        return files
+
+    def _is_searchable_note(self, path: Path) -> bool:
+        if not self._contained(path.resolve()):
+            return False
+        if path.name.startswith("."):
+            return False
+        try:
+            rel = path.resolve().relative_to(self.root)
+        except ValueError:
+            return False
+        return not any(part in _SKIP_DIR_NAMES or part.startswith(".") for part in rel.parts[:-1])
+
+    def _score_note(self, path: Path, text: str, terms: Sequence[str]) -> float:
+        lowered = text.lower()
+        filename = path.name.lower()
+        relative = self.relative_path(path).lower()
+        score = 0.0
+        for term in terms:
+            if term in filename:
+                score += 8.0
+            if term in relative:
+                score += 2.0
+            score += float(lowered.count(term))
+        return score
+
+    def _try_read_text(self, path: Path) -> str | None:
+        try:
+            return self._read_text(path)
+        except (OSError, UnicodeDecodeError, VaultPathError):
+            return None
 
     def _render_session_entry(
         self,
