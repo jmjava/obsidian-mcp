@@ -12,6 +12,8 @@ Creates or updates:
   <project>/.cursor/rules/obsidian-memory.mdc
   <project>/.vscode/mcp.json
   <project>/.github/copilot-instructions.md
+  <project>/.mcp.json
+  <project>/.claude/rules/obsidian-memory.md
 
 Existing unrelated MCP servers are preserved. Machine-specific paths are written
 only into the target project, not into this repository.
@@ -119,6 +121,11 @@ python3 "$SCRIPT_DIR/merge_mcp_config.py" \
   --flavor vscode \
   --config-json "$SERVER_JSON"
 
+python3 "$SCRIPT_DIR/merge_mcp_config.py" \
+  --file "$PROJECT/.mcp.json" \
+  --flavor claude \
+  --config-json "$SERVER_JSON"
+
 RULE_SRC="$REPO_ROOT/.cursor/rules/obsidian-memory.mdc"
 RULE_DEST="$PROJECT/.cursor/rules/obsidian-memory.mdc"
 mkdir -p "$(dirname "$RULE_DEST")"
@@ -131,6 +138,12 @@ mkdir -p "$(dirname "$COPILOT_DEST")"
 cp "$COPILOT_SRC" "$COPILOT_DEST"
 echo "wrote $COPILOT_DEST"
 
+CLAUDE_RULE_SRC="$REPO_ROOT/.claude/rules/obsidian-memory.md"
+CLAUDE_RULE_DEST="$PROJECT/.claude/rules/obsidian-memory.md"
+mkdir -p "$(dirname "$CLAUDE_RULE_DEST")"
+cp "$CLAUDE_RULE_SRC" "$CLAUDE_RULE_DEST"
+echo "wrote $CLAUDE_RULE_DEST"
+
 cat <<EOF
 
 Installed files:
@@ -138,10 +151,13 @@ Installed files:
   $PROJECT/.cursor/rules/obsidian-memory.mdc
   $PROJECT/.vscode/mcp.json
   $PROJECT/.github/copilot-instructions.md
+  $PROJECT/.mcp.json
+  $PROJECT/.claude/rules/obsidian-memory.md
 
 Follow-up:
-  1. Confirm uv is on PATH in Cursor and VS Code.
+  1. Confirm uv is on PATH in Cursor, VS Code, and Claude Code.
   2. Reload the window or restart MCP servers so tools are discovered.
+     Claude Code may ask you to approve the project server on first use.
   3. Expected tools:
        get_project_context
        capture_work_session

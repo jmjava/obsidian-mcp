@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "obsidian-dev-memory": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/ABSOLUTE/PATH/TO/obsidian-dev-memory-mcp",
+        "run",
+        "python",
+        "-m",
+        "obsidian_dev_memory"
+      ],
+      "env": {
+        "OBSIDIAN_VAULT_PATH": "/ABSOLUTE/PATH/TO/OBSIDIAN/VAULT",
+        "OBSIDIAN_MEMORY_ROOT": "AI Memory"
+      }
+    }
+  }
+}

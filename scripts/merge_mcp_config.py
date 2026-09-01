@@ -8,8 +8,11 @@ import json
 from pathlib import Path
 from typing import Any
 
-CURSOR_ROOT = "mcpServers"
-VSCODE_ROOT = "servers"
+ROOT_KEYS = {
+    "cursor": "mcpServers",
+    "claude": "mcpServers",
+    "vscode": "servers",
+}
 
 
 def merge_server_config(
@@ -19,7 +22,10 @@ def merge_server_config(
     server_name: str,
     server_config: dict[str, Any],
 ) -> str:
-    root_key = CURSOR_ROOT if flavor == "cursor" else VSCODE_ROOT
+    try:
+        root_key = ROOT_KEYS[flavor]
+    except KeyError as exc:
+        raise SystemExit(f"Unknown flavor: {flavor}") from exc
     data: dict[str, Any]
     if dest.exists():
         raw = dest.read_text(encoding="utf-8").strip()
@@ -55,7 +61,7 @@ def merge_server_config(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--file", required=True, type=Path)
-    parser.add_argument("--flavor", required=True, choices=("cursor", "vscode"))
+    parser.add_argument("--flavor", required=True, choices=tuple(ROOT_KEYS))
     parser.add_argument("--name", default="obsidian-dev-memory")
     parser.add_argument("--config-json", required=True)
     args = parser.parse_args()

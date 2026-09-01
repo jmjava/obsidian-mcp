@@ -1,6 +1,6 @@
 # GitHub Copilot: Obsidian Developer Memory
 
-Use the `obsidian-dev-memory` MCP tools to keep durable engineering memory in the local Obsidian vault. The same server is used by Cursor. Obsidian does not need to be running.
+Use the `obsidian-dev-memory` MCP tools to keep durable engineering memory in the local Obsidian vault. The same server is used by Cursor and Claude. Obsidian does not need to be running.
 
 ## When to read memory
 

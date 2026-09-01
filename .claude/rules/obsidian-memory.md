@@ -1,0 +1,65 @@
+# Obsidian Developer Memory
+
+Use the `obsidian-dev-memory` MCP tools to keep durable engineering memory in the local Obsidian vault. The same server is used by Cursor and GitHub Copilot. Obsidian does not need to be running.
+
+## Before substantial work
+
+Call `get_project_context` when existing project memory is likely to improve the work: continuing a feature, debugging a known area, making an architecture change, or answering "why is it like this?"
+
+Do not call it for trivial edits.
+
+## After meaningful work
+
+Call `capture_work_session` after a meaningful implementation, investigation, debugging session, migration, architecture change, or research task.
+
+Do not create a memory entry for:
+
+- typo fixes
+- formatting-only changes
+- trivial comments
+- one-line mechanical edits
+
+Prefer appending to today's session note over creating duplicate notes.
+
+## Durable decisions
+
+Call `record_decision` when an architectural or engineering decision is made that future work should know about.
+
+Examples:
+
+- selected authentication architecture
+- changed API boundaries
+- selected persistence mechanism
+- changed deployment strategy
+- chose one library over another for a durable reason
+
+If a decision file with the same generated name already exists, the server adds a numeric suffix instead of overwriting.
+
+## Project state
+
+Call `update_project_state` when the overall project state materially changes. Keep that file concise. It is current state, not a session log.
+
+## Memory lookup
+
+Call `search_memory` before guessing about prior decisions. Use `read_note` only for a specific vault-relative Markdown path.
+
+## Daily notes
+
+Use `append_daily_note` for short useful items that belong on today's vault daily note. Never overwrite existing daily-note contents.
+
+## Security
+
+Never persist:
+
+- passwords
+- API keys
+- access tokens
+- refresh tokens
+- JWT values
+- private keys
+- `.env` contents
+- database credentials
+- production secrets
+- sensitive customer data
+
+If a work summary contains secret-looking material, summarize it generically rather than persisting the literal value.
