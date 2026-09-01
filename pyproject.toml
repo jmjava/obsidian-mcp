@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "John Menke" }]
-keywords = ["mcp", "obsidian", "cursor", "copilot", "memory"]
+keywords = ["mcp", "obsidian", "cursor", "copilot", "claude", "memory"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "License :: OSI Approved :: MIT License",

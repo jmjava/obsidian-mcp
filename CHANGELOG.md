@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## Unreleased
+
+### Added
+
+- Claude Code project setup: `.mcp.json` example, `.claude/rules/obsidian-memory.md`, and installer support.
+- Claude Desktop configuration notes that reuse the same `mcpServers` stdio entry.
+
 ## 0.1.0 - 2026-08-22
 
 ### Added

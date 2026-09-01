@@ -13,3 +13,4 @@ htmlcov/
 # Generated machine-specific editor MCP configs
 .cursor/mcp.json
 .vscode/mcp.json
+.mcp.json

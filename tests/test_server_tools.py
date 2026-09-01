@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -121,3 +122,50 @@ def test_merge_mcp_config_preserves_unrelated_servers(tmp_path: Path) -> None:
     data = json.loads(dest.read_text(encoding="utf-8"))
     assert data["mcpServers"]["other"]["command"] == "echo"
     assert data["mcpServers"]["obsidian-dev-memory"]["command"] == "uv"
+
+
+def test_merge_mcp_config_claude_flavor_uses_mcp_servers(tmp_path: Path) -> None:
+    dest = tmp_path / ".mcp.json"
+    dest.write_text(
+        json.dumps({"mcpServers": {"other": {"command": "echo"}}}),
+        encoding="utf-8",
+    )
+    module_path = Path(__file__).resolve().parents[1] / "scripts" / "merge_mcp_config.py"
+    spec = importlib.util.spec_from_file_location("merge_mcp_config", module_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module.merge_server_config(
+        dest,
+        flavor="claude",
+        server_name="obsidian-dev-memory",
+        server_config={"command": "uv", "type": "stdio"},
+    )
+    data = json.loads(dest.read_text(encoding="utf-8"))
+    assert data["mcpServers"]["other"]["command"] == "echo"
+    assert data["mcpServers"]["obsidian-dev-memory"]["command"] == "uv"
+    assert data["mcpServers"]["obsidian-dev-memory"]["type"] == "stdio"
+
+
+def test_install_project_writes_claude_config(tmp_path: Path) -> None:
+    project = tmp_path / "app"
+    vault = tmp_path / "vault"
+    project.mkdir()
+    vault.mkdir()
+    script = Path(__file__).resolve().parents[1] / "scripts" / "install-project.sh"
+    subprocess.run(
+        [str(script), "--project", str(project), "--vault", str(vault)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    claude = json.loads((project / ".mcp.json").read_text(encoding="utf-8"))
+    assert claude["mcpServers"]["obsidian-dev-memory"]["type"] == "stdio"
+    assert claude["mcpServers"]["obsidian-dev-memory"]["env"]["OBSIDIAN_VAULT_PATH"] == str(
+        vault.resolve()
+    )
+    rule = project / ".claude" / "rules" / "obsidian-memory.md"
+    assert rule.is_file()
+    assert "get_project_context" in rule.read_text(encoding="utf-8")
+    assert (project / ".cursor" / "mcp.json").is_file()
+    assert (project / ".vscode" / "mcp.json").is_file()

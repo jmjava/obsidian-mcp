@@ -1,19 +1,19 @@
 # Obsidian Developer Memory MCP
 
-A local [Model Context Protocol](https://modelcontextprotocol.io) server that gives AI coding assistants such as **Cursor** and **GitHub Copilot** persistent engineering memory.
+A local [Model Context Protocol](https://modelcontextprotocol.io) server that gives AI coding assistants such as **Cursor**, **GitHub Copilot**, and **Claude** persistent engineering memory.
 
 Memory is stored as ordinary Markdown files in an Obsidian vault. Obsidian does not need to be running. There is no community plugin and no Obsidian API key.
 
-The same stdio MCP server works with both Cursor and GitHub Copilot / VS Code.
+The same stdio MCP server works with Cursor, GitHub Copilot / VS Code, Claude Code, and Claude Desktop.
 
 ## Architecture
 
 ```text
 Cursor Agent --------------------\
                                   \
-                                   > MCP stdio server
+GitHub Copilot / VS Code -------- > MCP stdio server
                                   /        |
-GitHub Copilot / VS Code --------/         v
+Claude Code / Claude Desktop ----/         v
                                obsidian-dev-memory
                                         |
                                         v
@@ -21,7 +21,7 @@ GitHub Copilot / VS Code --------/         v
 ```
 
 ```text
-Developer opens spring-auth in Cursor
+Developer opens spring-auth in Cursor, VS Code, or Claude Code
         |
         v
 Cursor calls get_project_context("spring-auth")
@@ -160,6 +160,56 @@ Workspace Copilot / VS Code config lives at `.vscode/mcp.json` and uses the curr
 
 `.github/copilot-instructions.md` gives Copilot the same memory behavior as Cursor.
 
+## Claude Code setup
+
+Project-level Claude Code config lives at `.mcp.json` and uses the same `mcpServers` format as Cursor. A portable template is in `config/claude.mcp.json.example`:
+
+```json
+{
+  "mcpServers": {
+    "obsidian-dev-memory": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/ABSOLUTE/PATH/TO/obsidian-dev-memory-mcp",
+        "run",
+        "python",
+        "-m",
+        "obsidian_dev_memory"
+      ],
+      "env": {
+        "OBSIDIAN_VAULT_PATH": "/ABSOLUTE/PATH/TO/OBSIDIAN/VAULT"
+      }
+    }
+  }
+}
+```
+
+`.claude/rules/obsidian-memory.md` gives Claude Code the same memory behavior as Cursor and Copilot. The installer writes that rule file instead of overwriting an existing `CLAUDE.md`.
+
+Machine-specific `.mcp.json` files are created by the installer and are not committed here. Claude Code may ask you to approve the project server on first use.
+
+Alternatively, add the server from Claude Code:
+
+```bash
+claude mcp add --scope project --transport stdio \
+  --env OBSIDIAN_VAULT_PATH=/ABSOLUTE/PATH/TO/OBSIDIAN/VAULT \
+  obsidian-dev-memory -- \
+  uv --directory /ABSOLUTE/PATH/TO/obsidian-dev-memory-mcp \
+  run python -m obsidian_dev_memory
+```
+
+## Claude Desktop setup
+
+Claude Desktop reads a user-level `mcpServers` file rather than project config:
+
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+- Linux: `~/.config/Claude/claude_desktop_config.json`
+
+Merge the same server entry from `config/claude.mcp.json.example` into that file, then restart Claude Desktop.
+
 ## Installer usage
 
 Wire this server into another development project:
@@ -187,6 +237,8 @@ The installer creates or updates:
 - `<project>/.cursor/rules/obsidian-memory.mdc`
 - `<project>/.vscode/mcp.json`
 - `<project>/.github/copilot-instructions.md`
+- `<project>/.mcp.json`
+- `<project>/.claude/rules/obsidian-memory.md`
 
 It fails clearly when the target project or vault is missing, and it merges MCP JSON so unrelated servers are not destroyed.
 
@@ -228,7 +280,7 @@ The `AI Memory` folder honors `OBSIDIAN_MEMORY_ROOT`. Logical project names are 
 
 ## Example workflow
 
-1. Open a project in Cursor or VS Code.
+1. Open a project in Cursor, VS Code, or Claude Code.
 2. Before substantial work, the assistant calls `get_project_context`.
 3. After meaningful implementation, it calls `capture_work_session`.
 4. When an architecture choice is made, it calls `record_decision`.
@@ -242,7 +294,7 @@ The `AI Memory` folder honors `OBSIDIAN_MEMORY_ROOT`. Logical project names are 
 - Writes are atomic (`tempfile` + `os.replace`) where practical.
 - The tools are not a general filesystem API.
 - Secret-looking values (keys, tokens, JWTs, private keys, `password=` assignments) are replaced with `[redacted-secret]` before they are written.
-- Cursor rules and Copilot instructions tell the assistant never to persist passwords, API keys, tokens, JWTs, private keys, `.env` contents, database credentials, production secrets, or sensitive customer data.
+- Cursor rules, Copilot instructions, and Claude Code rules tell the assistant never to persist passwords, API keys, tokens, JWTs, private keys, `.env` contents, database credentials, production secrets, or sensitive customer data.
 
 ## Testing
 
@@ -268,6 +320,8 @@ The smoke test verifies the environment variable, vault directory, package impor
 | Server exits immediately | `OBSIDIAN_VAULT_PATH` is set and the directory exists |
 | Tools do not appear in Cursor | Project `.cursor/mcp.json` is present; reload the window; `uv` is on PATH |
 | Tools do not appear in Copilot | Workspace `.vscode/mcp.json` uses a top-level `servers` key, not `mcpServers` |
+| Tools do not appear in Claude Code | Project `.mcp.json` uses a top-level `mcpServers` key; approve the server if prompted; `uv` is on PATH |
+| Tools do not appear in Claude Desktop | The user-level `claude_desktop_config.json` includes the `mcpServers` entry; restart Claude Desktop |
 | `Path traversal is not allowed` | Pass vault-relative paths such as `AI Memory/Projects/spring-auth/Project State.md` |
 | Decision file name already existed | The server wrote `YYYY-MM-DD-<slug>-2.md` instead of overwriting |
 | Git section missing from a session | `repository_path` was omitted or is not a Git repository; that is non-fatal |

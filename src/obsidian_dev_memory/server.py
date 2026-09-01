@@ -13,7 +13,7 @@ from obsidian_dev_memory.vault import Vault, VaultError
 logger = logging.getLogger("obsidian_dev_memory")
 
 _SECURITY_INSTRUCTIONS = """
-Persistent engineering memory for Cursor and GitHub Copilot.
+Persistent engineering memory for Cursor, GitHub Copilot, and Claude.
 
 Never persist passwords, API keys, access tokens, refresh tokens, JWT values,
 private keys, .env contents, database credentials, production secrets, or
