@@ -13,6 +13,7 @@ from obsidian_dev_memory.server import (
     create_server,
     list_tool_names,
     tool_append_daily_note,
+    tool_block_task,
     tool_capture_work_session,
     tool_claim_task,
     tool_complete_task,
@@ -37,6 +38,7 @@ EXPECTED_TOOLS = {
     "list_open_tasks",
     "claim_task",
     "complete_task",
+    "block_task",
 }
 
 
@@ -123,6 +125,11 @@ def test_task_tools_claim_and_complete(tmp_path: Path) -> None:
     done = tool_complete_task(vault, "spring-auth", "characterization", now=STAMP)
     assert done["to_section"] == "Completed"
     assert tool_list_open_tasks(vault, "spring-auth")["tasks"][0]["text"] == "Write docs"
+    blocked = tool_block_task(vault, "spring-auth", "Write docs", now=STAMP)
+    assert blocked["from_section"] == "Next Steps"
+    assert blocked["to_section"] == "Blocked"
+    assert blocked["queue_updated"] is False
+    assert tool_list_open_tasks(vault, "spring-auth")["tasks"] == []
 
 
 def test_task_tools_claim_checks_agent_queue(tmp_path: Path) -> None:

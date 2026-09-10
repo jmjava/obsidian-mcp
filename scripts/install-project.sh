@@ -166,6 +166,7 @@ Follow-up:
        list_open_tasks
        claim_task
        complete_task
+       block_task
        search_memory
        read_note
        append_daily_note

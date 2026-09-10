@@ -43,6 +43,7 @@ _LIST_FIELDS = {
     "completed": "completed",
     "in progress": "in_progress",
     "blocked": "blocked",
+    "blockers": "blocked",
     "next steps": "next_steps",
     "important files": "important_files",
     "notes": "notes",
@@ -361,6 +362,34 @@ def find_matching_task(items: Sequence[str], query: str) -> str:
     raise TaskMatchError(f"No matching task for {query!r}")
 
 
+def find_task_across_sources(
+    sources: Sequence[tuple[str, Sequence[str]]],
+    query: str,
+) -> tuple[str, str]:
+    """Return ``(matched_text, source_name)`` for a unique match across lists."""
+    needle = normalize_task_text(query)
+    if not needle:
+        raise TaskMatchError("task text is required")
+    exact: list[tuple[str, str]] = []
+    partial: list[tuple[str, str]] = []
+    for name, items in sources:
+        for item in items:
+            key = normalize_task_text(item)
+            if key == needle:
+                exact.append((item, name))
+            elif needle in key:
+                partial.append((item, name))
+    if len(exact) == 1:
+        return exact[0]
+    if len(exact) > 1:
+        raise TaskMatchError(f"Ambiguous task match for {query!r}")
+    if len(partial) == 1:
+        return partial[0]
+    if len(partial) > 1:
+        raise TaskMatchError(f"Ambiguous task match for {query!r}")
+    raise TaskMatchError(f"No matching task for {query!r}")
+
+
 def move_task_bullet(
     source: Sequence[str],
     dest: Sequence[str],
@@ -426,6 +455,7 @@ __all__ = [
     "excerpt_around",
     "extract_title",
     "find_matching_task",
+    "find_task_across_sources",
     "format_date",
     "format_frontmatter",
     "format_heading_time",

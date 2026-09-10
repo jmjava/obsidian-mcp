@@ -10,6 +10,7 @@ from obsidian_dev_memory.markdown import (
     TaskMatchError,
     append_under_heading,
     bullet_list,
+    find_task_across_sources,
     format_frontmatter,
     format_heading_time,
     move_open_checkbox,
@@ -123,6 +124,10 @@ Design complete
 
 - Existing claim
 
+## Blockers
+
+- Waiting on review
+
 ## Next Steps
 
 - Add characterization tests for Order Status API
@@ -148,7 +153,7 @@ def test_parse_project_state_next_steps_bullets() -> None:
         "checkbox-shaped leftover",
     ]
     assert parsed["notes"] == ["Keep this"]
-    assert parsed["blocked"] == []
+    assert parsed["blocked"] == ["Waiting on review"]
 
 
 def test_move_next_step_to_in_progress() -> None:
@@ -192,6 +197,50 @@ def test_move_task_missing_and_ambiguous() -> None:
         move_task_bullet(items, [], "missing")
     with pytest.raises(TaskMatchError, match="Ambiguous"):
         move_task_bullet(["Add tests", "Add tests later"], [], "Add")
+
+
+def test_move_next_step_or_in_progress_to_blocked() -> None:
+    parsed = parse_project_state(SAMPLE_PROJECT_STATE)
+    next_match, from_section = find_task_across_sources(
+        (("Next Steps", parsed["next_steps"]), ("In Progress", parsed["in_progress"])),
+        "characterization",
+    )
+    next_steps, blocked, moved = move_task_bullet(
+        parsed["next_steps"],
+        parsed["blocked"],
+        "characterization",
+    )
+    assert from_section == "Next Steps"
+    assert next_match == moved == "Add characterization tests for Order Status API"
+    assert next_match not in next_steps
+    assert blocked == ["Waiting on review", next_match]
+
+    progress_match, from_section = find_task_across_sources(
+        (("Next Steps", next_steps), ("In Progress", parsed["in_progress"])),
+        "Existing claim",
+    )
+    in_progress, blocked, moved = move_task_bullet(
+        parsed["in_progress"],
+        blocked,
+        "Existing claim",
+    )
+    assert from_section == "In Progress"
+    assert progress_match == moved == "Existing claim"
+    assert in_progress == []
+    assert blocked == ["Waiting on review", next_match, "Existing claim"]
+
+
+def test_find_task_across_sources_missing_and_ambiguous() -> None:
+    sources = (
+        ("Next Steps", ["Add characterization tests", "Write docs"]),
+        ("In Progress", ["Add review notes"]),
+    )
+    with pytest.raises(TaskMatchError, match="No matching"):
+        find_task_across_sources(sources, "missing")
+    with pytest.raises(TaskMatchError, match="Ambiguous"):
+        find_task_across_sources(sources, "Add")
+    with pytest.raises(TaskMatchError, match="task text is required"):
+        find_task_across_sources(sources, "   ")
 
 
 SAMPLE_AGENT_QUEUE = """# Agent Queue

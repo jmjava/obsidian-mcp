@@ -475,6 +475,94 @@ def test_claim_task_skips_queue_when_match_is_not_unique(tmp_path: Path) -> None
     )
 
 
+def test_block_task_moves_next_step_and_in_progress(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    daily = vault.root / "Daily" / "2026-08-22.md"
+    daily.parent.mkdir()
+    daily.write_text("# Daily\n\nDo not overwrite me\n", encoding="utf-8")
+    vault.update_project_state(
+        "spring-auth",
+        objective="Ship consent",
+        current_state="Design complete",
+        architecture=["stdio MCP"],
+        completed=["Wired vault"],
+        in_progress=["Add characterization tests for Order Status API"],
+        next_steps=["Document the Automations starter pack"],
+        notes=["Keep this"],
+        now=STAMP,
+    )
+    queue = _write_agent_queue(
+        vault,
+        "# Agent Queue\n\n"
+        "- [ ] Document the Automations starter pack #agent\n"
+        "- [ ] Personal chore\n",
+    )
+    blocked = vault.block_task("spring-auth", "Automations", now=STAMP)
+    assert blocked.task == "Document the Automations starter pack"
+    assert blocked.from_section == "Next Steps"
+    assert blocked.to_section == "Blocked"
+    assert blocked.queue_updated is False
+    text = (vault.root / blocked.path).read_text(encoding="utf-8")
+    assert "## Objective" in text
+    assert "Ship consent" in text
+    assert "stdio MCP" in text
+    assert "Wired vault" in text
+    assert "Keep this" in text
+    blocked_block = text.split("## Blocked", 1)[1].split("##", 1)[0]
+    assert "Document the Automations starter pack" in blocked_block
+    assert "## Next Steps" not in text
+    in_progress = text.split("## In Progress", 1)[1].split("##", 1)[0]
+    assert "Add characterization tests for Order Status API" in in_progress
+    assert daily.read_text(encoding="utf-8") == "# Daily\n\nDo not overwrite me\n"
+    assert queue.read_text(encoding="utf-8") == (
+        "# Agent Queue\n\n"
+        "- [ ] Document the Automations starter pack #agent\n"
+        "- [ ] Personal chore\n"
+    )
+
+    claimed_blocked = vault.block_task("spring-auth", "characterization", now=STAMP)
+    assert claimed_blocked.from_section == "In Progress"
+    assert claimed_blocked.to_section == "Blocked"
+    text = (vault.root / claimed_blocked.path).read_text(encoding="utf-8")
+    blocked_block = text.split("## Blocked", 1)[1].split("##", 1)[0]
+    assert "Document the Automations starter pack" in blocked_block
+    assert "Add characterization tests for Order Status API" in blocked_block
+    assert "## In Progress" not in text
+    assert daily.read_text(encoding="utf-8") == "# Daily\n\nDo not overwrite me\n"
+
+
+def test_block_task_rejects_missing_ambiguous_and_already_blocked(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    vault.update_project_state(
+        "spring-auth",
+        next_steps=["Add characterization tests", "Add docs"],
+        in_progress=["Add review notes"],
+        blocked=["Waiting on review"],
+        now=STAMP,
+    )
+    with pytest.raises(VaultError, match="No matching"):
+        vault.block_task("spring-auth", "missing")
+    with pytest.raises(VaultError, match="Ambiguous"):
+        vault.block_task("spring-auth", "Add")
+    with pytest.raises(VaultError, match="already blocked"):
+        vault.block_task("spring-auth", "Waiting on review")
+
+
+def test_block_task_redacts_secrets_on_rewrite(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    vault.update_project_state(
+        "spring-auth",
+        in_progress=["Rotate password=hunter2"],
+        now=STAMP,
+    )
+    blocked = vault.block_task("spring-auth", "Rotate", now=STAMP)
+    assert SECRET_PLACEHOLDER in blocked.task
+    assert "hunter2" not in blocked.task
+    text = (vault.root / blocked.path).read_text(encoding="utf-8")
+    assert "hunter2" not in text
+    assert SECRET_PLACEHOLDER in text
+
+
 def test_invalid_daily_date_is_rejected(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     with pytest.raises(VaultError, match="YYYY-MM-DD"):
