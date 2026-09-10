@@ -148,6 +148,39 @@ def create_server(vault: Vault | None = None) -> Any:
         ).to_dict()
 
     @mcp.tool()
+    def list_open_tasks(
+        project: str,
+        include_agent_queue: bool = True,
+    ) -> dict[str, Any]:
+        """List open Next Steps and optional Agent Queue checkboxes.
+
+        Scans Project State Next Steps plus AI Memory/Agent Queue.md unchecked
+        boxes when that note exists. Does not write vault files.
+        """
+        return active_vault.list_open_tasks(
+            project,
+            include_agent_queue=include_agent_queue,
+        ).to_dict()
+
+    @mcp.tool()
+    def claim_task(project: str, task: str) -> dict[str, Any]:
+        """Move a Next Steps bullet to In Progress.
+
+        Rewrites Project State.md the same way update_project_state does,
+        preserving other sections. Never writes daily notes.
+        """
+        return active_vault.claim_task(project=project, task=task).to_dict()
+
+    @mcp.tool()
+    def complete_task(project: str, task: str) -> dict[str, Any]:
+        """Move an In Progress bullet to Completed.
+
+        Rewrites Project State.md the same way update_project_state does,
+        preserving other sections. Never writes daily notes.
+        """
+        return active_vault.complete_task(project=project, task=task).to_dict()
+
+    @mcp.tool()
     def search_memory(
         query: str,
         project: str | None = None,
@@ -268,6 +301,32 @@ def tool_record_decision(
 
 def tool_update_project_state(vault: Vault, project: str, **kwargs: Any) -> dict[str, Any]:
     return vault.update_project_state(project=project, **kwargs).to_dict()
+
+
+def tool_list_open_tasks(
+    vault: Vault,
+    project: str,
+    include_agent_queue: bool = True,
+) -> dict[str, Any]:
+    return vault.list_open_tasks(project, include_agent_queue=include_agent_queue).to_dict()
+
+
+def tool_claim_task(
+    vault: Vault,
+    project: str,
+    task: str,
+    now: Any | None = None,
+) -> dict[str, Any]:
+    return vault.claim_task(project=project, task=task, now=now).to_dict()
+
+
+def tool_complete_task(
+    vault: Vault,
+    project: str,
+    task: str,
+    now: Any | None = None,
+) -> dict[str, Any]:
+    return vault.complete_task(project=project, task=task, now=now).to_dict()
 
 
 def tool_search_memory(

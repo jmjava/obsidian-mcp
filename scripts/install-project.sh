@@ -163,6 +163,9 @@ Follow-up:
        capture_work_session
        record_decision
        update_project_state
+       list_open_tasks
+       claim_task
+       complete_task
        search_memory
        read_note
        append_daily_note

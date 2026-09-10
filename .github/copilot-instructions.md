@@ -46,6 +46,8 @@ If a decision file with the same generated name already exists, the server adds 
 
 Call `update_project_state` when the overall project state materially changes. Keep `Project State.md` concise. It is not a session log.
 
+When claiming or finishing a Next Steps item, prefer `list_open_tasks`, `claim_task`, and `complete_task`. They preserve other sections and do not overwrite daily notes.
+
 ## Daily notes
 
 Use `append_daily_note` for short useful items on today's vault daily note. Do not overwrite existing daily-note contents.
