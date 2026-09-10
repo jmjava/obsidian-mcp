@@ -630,6 +630,108 @@ def test_block_task_rejects_missing_ambiguous_and_already_blocked(tmp_path: Path
         vault.block_task("spring-auth", "Waiting on review")
 
 
+def test_unblock_task_moves_blocked_to_next_steps(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    daily = vault.root / "Daily" / "2026-08-22.md"
+    daily.parent.mkdir()
+    daily.write_text("# Daily\n\nDo not overwrite me\n", encoding="utf-8")
+    vault.ensure_project("spring-auth")
+    state = vault.project_state_path("spring-auth")
+    state.write_text(
+        "# Project State\n\n"
+        "## Objective\n\n"
+        "Ship consent\n\n"
+        "## Current State\n\n"
+        "Design complete\n\n"
+        "## Architecture\n\n"
+        "- stdio MCP\n\n"
+        "## Completed\n\n"
+        "- Wired vault\n\n"
+        "## In Progress\n\n"
+        "- Add characterization tests for Order Status API\n\n"
+        "## Next Steps\n\n"
+        "- Document the Automations starter pack\n\n"
+        "## Blocked\n\n"
+        "- Waiting on review\n\n"
+        "## Blockers\n\n"
+        "- External dependency\n\n"
+        "## Notes\n\n"
+        "- Keep this\n",
+        encoding="utf-8",
+    )
+    queue = _write_agent_queue(
+        vault,
+        "# Agent Queue\n\n"
+        "- [ ] Waiting on review #agent\n"
+        "- [ ] Personal chore\n",
+    )
+    unblocked = vault.unblock_task("spring-auth", "review", now=STAMP)
+    assert unblocked.task == "Waiting on review"
+    assert unblocked.from_section == "Blocked"
+    assert unblocked.to_section == "Next Steps"
+    assert unblocked.queue_updated is False
+    text = (vault.root / unblocked.path).read_text(encoding="utf-8")
+    assert "## Objective" in text
+    assert "Ship consent" in text
+    assert "stdio MCP" in text
+    assert "Wired vault" in text
+    assert "Keep this" in text
+    next_block = text.split("## Next Steps", 1)[1].split("##", 1)[0]
+    assert "Document the Automations starter pack" in next_block
+    assert "Waiting on review" in next_block
+    blocked_block = text.split("## Blocked", 1)[1].split("##", 1)[0]
+    assert "Waiting on review" not in blocked_block
+    assert "External dependency" in blocked_block
+    in_progress = text.split("## In Progress", 1)[1].split("##", 1)[0]
+    assert "Add characterization tests for Order Status API" in in_progress
+    assert daily.read_text(encoding="utf-8") == "# Daily\n\nDo not overwrite me\n"
+    assert queue.read_text(encoding="utf-8") == (
+        "# Agent Queue\n\n"
+        "- [ ] Waiting on review #agent\n"
+        "- [ ] Personal chore\n"
+    )
+    remaining = vault.unblock_task("spring-auth", "External", now=STAMP)
+    assert remaining.from_section == "Blocked"
+    assert remaining.to_section == "Next Steps"
+    text = (vault.root / remaining.path).read_text(encoding="utf-8")
+    next_block = text.split("## Next Steps", 1)[1].split("##", 1)[0]
+    assert "Waiting on review" in next_block
+    assert "External dependency" in next_block
+    assert "## Blocked" not in text
+    assert daily.read_text(encoding="utf-8") == "# Daily\n\nDo not overwrite me\n"
+
+
+def test_unblock_task_rejects_missing_ambiguous_and_already_open(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    vault.update_project_state(
+        "spring-auth",
+        next_steps=["Write docs"],
+        blocked=["Add tests", "Add tests later"],
+        now=STAMP,
+    )
+    with pytest.raises(VaultError, match="No matching"):
+        vault.unblock_task("spring-auth", "missing")
+    with pytest.raises(VaultError, match="Ambiguous"):
+        vault.unblock_task("spring-auth", "Add")
+    with pytest.raises(VaultError, match="already in next steps"):
+        vault.unblock_task("spring-auth", "Write docs")
+
+
+def test_unblock_task_redacts_secrets_on_rewrite(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    vault.update_project_state(
+        "spring-auth",
+        blocked=["Rotate password=hunter2"],
+        now=STAMP,
+    )
+    unblocked = vault.unblock_task("spring-auth", "Rotate", now=STAMP)
+    assert SECRET_PLACEHOLDER in unblocked.task
+    assert "hunter2" not in unblocked.task
+    text = (vault.root / unblocked.path).read_text(encoding="utf-8")
+    assert "hunter2" not in text
+    assert SECRET_PLACEHOLDER in text
+
+
 def test_block_task_redacts_secrets_on_rewrite(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     vault.update_project_state(

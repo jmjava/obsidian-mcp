@@ -204,6 +204,16 @@ def create_server(vault: Vault | None = None) -> Any:
         return active_vault.block_task(project=project, task=task).to_dict()
 
     @mcp.tool()
+    def unblock_task(project: str, task: str) -> dict[str, Any]:
+        """Move a Blocked or Blockers item back to Next Steps.
+
+        Rewrites Project State.md the same way update_project_state does,
+        preserving other sections. Does not check Agent Queue boxes and
+        never writes daily notes.
+        """
+        return active_vault.unblock_task(project=project, task=task).to_dict()
+
+    @mcp.tool()
     def search_memory(
         query: str,
         project: str | None = None,
@@ -363,6 +373,15 @@ def tool_block_task(
     now: Any | None = None,
 ) -> dict[str, Any]:
     return vault.block_task(project=project, task=task, now=now).to_dict()
+
+
+def tool_unblock_task(
+    vault: Vault,
+    project: str,
+    task: str,
+    now: Any | None = None,
+) -> dict[str, Any]:
+    return vault.unblock_task(project=project, task=task, now=now).to_dict()
 
 
 def tool_search_memory(

@@ -103,7 +103,7 @@ class OpenTaskList:
 
 @dataclass(frozen=True)
 class TaskMoveResult:
-    """Result of claiming, completing, or blocking a Project State task."""
+    """Result of claiming, completing, blocking, or unblocking a Project State task."""
 
     path: str
     created: bool = False

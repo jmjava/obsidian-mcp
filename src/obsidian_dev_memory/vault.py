@@ -450,6 +450,36 @@ class Vault:
             sync_agent_queue=False,
         )
 
+    def unblock_task(
+        self,
+        project: str,
+        task: str,
+        now: datetime | None = None,
+    ) -> TaskMoveResult:
+        parsed = self._load_project_state(project)
+        next_steps = [str(item) for item in parsed["next_steps"]]
+        blocked = [str(item) for item in parsed["blocked"]]
+        already = self._exact_task_match(next_steps, task)
+        if already is not None:
+            raise VaultError(f"Task already in next steps: {already}")
+        try:
+            blocked, next_steps, matched = move_task_bullet(blocked, next_steps, task)
+        except TaskMatchError as exc:
+            raise VaultError(str(exc)) from exc
+        parsed["blocked"] = blocked
+        parsed["next_steps"] = next_steps
+        return self._rewrite_moved_task(
+            project=project,
+            parsed=parsed,
+            matched=matched,
+            from_section="Blocked",
+            to_section="Next Steps",
+            message="Unblocked task",
+            now=now,
+            task_query=task,
+            sync_agent_queue=False,
+        )
+
     def _load_project_state(self, project: str) -> dict[str, str | list[str]]:
         path = self.project_state_path(project)
         if not path.exists() or not path.is_file():
