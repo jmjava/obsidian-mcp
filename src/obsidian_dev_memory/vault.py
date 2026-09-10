@@ -16,6 +16,7 @@ from obsidian_dev_memory.markdown import (
     excerpt_around,
     extract_title,
     find_matching_task,
+    find_task_across_sources,
     format_date,
     format_frontmatter,
     format_heading_time,
@@ -391,6 +392,45 @@ class Vault:
             task_query=task,
         )
 
+    def block_task(
+        self,
+        project: str,
+        task: str,
+        now: datetime | None = None,
+    ) -> TaskMoveResult:
+        parsed = self._load_project_state(project)
+        next_steps = [str(item) for item in parsed["next_steps"]]
+        in_progress = [str(item) for item in parsed["in_progress"]]
+        blocked = [str(item) for item in parsed["blocked"]]
+        already = self._exact_task_match(blocked, task)
+        if already is not None:
+            raise VaultError(f"Task already blocked: {already}")
+        try:
+            _, from_section = find_task_across_sources(
+                (("Next Steps", next_steps), ("In Progress", in_progress)),
+                task,
+            )
+        except TaskMatchError as exc:
+            raise VaultError(str(exc)) from exc
+        if from_section == "Next Steps":
+            next_steps, blocked, matched = move_task_bullet(next_steps, blocked, task)
+        else:
+            in_progress, blocked, matched = move_task_bullet(in_progress, blocked, task)
+        parsed["next_steps"] = next_steps
+        parsed["in_progress"] = in_progress
+        parsed["blocked"] = blocked
+        return self._rewrite_moved_task(
+            project=project,
+            parsed=parsed,
+            matched=matched,
+            from_section=from_section,
+            to_section="Blocked",
+            message="Blocked task",
+            now=now,
+            task_query=task,
+            sync_agent_queue=False,
+        )
+
     def _load_project_state(self, project: str) -> dict[str, str | list[str]]:
         path = self.project_state_path(project)
         if not path.exists() or not path.is_file():
@@ -459,8 +499,11 @@ class Vault:
         message: str,
         now: datetime | None,
         task_query: str,
+        sync_agent_queue: bool = True,
     ) -> TaskMoveResult:
-        queue_path, queue_body = self._prepare_queue_check(task_query)
+        queue_path, queue_body = ("", None)
+        if sync_agent_queue:
+            queue_path, queue_body = self._prepare_queue_check(task_query)
         written = self.update_project_state(project=project, now=now, **parsed)
         queue_updated = False
         if queue_body is not None:
