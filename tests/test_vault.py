@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from obsidian_dev_memory.markdown import SECRET_PLACEHOLDER
 from obsidian_dev_memory.vault import Vault, VaultError, VaultPathError
 
 STAMP = datetime(2026, 8, 22, 11, 42, tzinfo=ZoneInfo("America/New_York"))
@@ -154,6 +155,124 @@ def test_prevents_escaping_vault_root_via_symlink(tmp_path: Path) -> None:
     (vault.root / "leak").symlink_to(outside)
     with pytest.raises(VaultPathError, match="escapes"):
         vault.read_note("leak/secret.txt")
+
+
+def test_list_open_tasks_reads_next_steps_and_agent_queue(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    vault.update_project_state(
+        "spring-auth",
+        objective="Ship consent",
+        next_steps=[
+            "Add characterization tests for Order Status API",
+            "Document the Automations starter pack",
+        ],
+        in_progress=["Already claimed"],
+        now=STAMP,
+    )
+    queue = vault.root / "AI Memory" / "Agent Queue.md"
+    queue.write_text(
+        "# Agent Queue\n\n"
+        "- [ ] Add characterization tests for Order Status API #agent\n"
+        "- [ ] Fix docs-drift in orch-guide #agent\n"
+        "- [x] Finished item #agent\n",
+        encoding="utf-8",
+    )
+    listed = vault.list_open_tasks("spring-auth")
+    texts = [item.text for item in listed.tasks]
+    sources = {item.text: item.source for item in listed.tasks}
+    assert "Add characterization tests for Order Status API" in texts
+    assert sources["Add characterization tests for Order Status API"] == "next_steps"
+    assert "Fix docs-drift in orch-guide #agent" in texts
+    assert sources["Fix docs-drift in orch-guide #agent"] == "agent_queue"
+    assert "Already claimed" not in texts
+    assert "Finished item #agent" not in texts
+    hidden = vault.list_open_tasks("spring-auth", include_agent_queue=False)
+    assert all(item.source == "next_steps" for item in hidden.tasks)
+
+
+def test_claim_and_complete_move_next_step_bullets(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    daily = vault.root / "Daily" / "2026-08-22.md"
+    daily.parent.mkdir()
+    daily.write_text("# Daily\n\nDo not overwrite me\n", encoding="utf-8")
+    vault.update_project_state(
+        "spring-auth",
+        objective="Ship consent",
+        current_state="Design complete",
+        architecture=["stdio MCP"],
+        completed=["Wired vault"],
+        in_progress=[],
+        next_steps=[
+            "Add characterization tests for Order Status API",
+            "Document the Automations starter pack",
+        ],
+        notes=["Keep this"],
+        now=STAMP,
+    )
+    claimed = vault.claim_task(
+        "spring-auth",
+        "characterization",
+        now=STAMP.replace(hour=12),
+    )
+    assert claimed.task == "Add characterization tests for Order Status API"
+    assert claimed.from_section == "Next Steps"
+    assert claimed.to_section == "In Progress"
+    text = (vault.root / claimed.path).read_text(encoding="utf-8")
+    assert "## Objective" in text
+    assert "Ship consent" in text
+    assert "stdio MCP" in text
+    assert "Wired vault" in text
+    assert "Keep this" in text
+    assert "- Add characterization tests for Order Status API" in text
+    next_block = text.split("## Next Steps", 1)[1]
+    assert "characterization" not in next_block
+    assert "Document the Automations starter pack" in next_block
+    in_progress = text.split("## In Progress", 1)[1].split("##", 1)[0]
+    assert "Add characterization tests for Order Status API" in in_progress
+    assert daily.read_text(encoding="utf-8") == "# Daily\n\nDo not overwrite me\n"
+
+    completed = vault.complete_task(
+        "spring-auth",
+        "characterization",
+        now=STAMP.replace(hour=13),
+    )
+    assert completed.from_section == "In Progress"
+    assert completed.to_section == "Completed"
+    text = (vault.root / completed.path).read_text(encoding="utf-8")
+    completed_block = text.split("## Completed", 1)[1].split("##", 1)[0]
+    assert "Wired vault" in completed_block
+    assert "Add characterization tests for Order Status API" in completed_block
+    assert "## In Progress" not in text
+    assert daily.read_text(encoding="utf-8") == "# Daily\n\nDo not overwrite me\n"
+
+
+def test_claim_task_rejects_missing_and_already_claimed(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    vault.update_project_state(
+        "spring-auth",
+        next_steps=["Add characterization tests"],
+        in_progress=["Document the Automations starter pack"],
+        now=STAMP,
+    )
+    with pytest.raises(VaultError, match="No matching"):
+        vault.claim_task("spring-auth", "missing")
+    with pytest.raises(VaultError, match="already in progress"):
+        vault.claim_task("spring-auth", "Document the Automations starter pack")
+
+
+def test_claim_task_redacts_secrets_on_rewrite(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    vault.update_project_state(
+        "spring-auth",
+        next_steps=["Rotate password=hunter2"],
+        now=STAMP,
+    )
+    claimed = vault.claim_task("spring-auth", "Rotate", now=STAMP)
+    assert SECRET_PLACEHOLDER in claimed.task
+    assert "hunter2" not in claimed.task
+    text = (vault.root / claimed.path).read_text(encoding="utf-8")
+    assert "hunter2" not in text
+    assert SECRET_PLACEHOLDER in text
 
 
 def test_invalid_daily_date_is_rejected(tmp_path: Path) -> None:

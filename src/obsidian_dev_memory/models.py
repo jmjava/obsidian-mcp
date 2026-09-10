@@ -73,3 +73,44 @@ class WriteResult:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+@dataclass(frozen=True)
+class OpenTask:
+    """One open Next Step or Agent Queue checkbox."""
+
+    text: str
+    source: str
+    path: str
+
+    def to_dict(self) -> dict[str, str]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class OpenTaskList:
+    """Open tasks returned by list_open_tasks."""
+
+    project: str
+    tasks: list[OpenTask] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "project": self.project,
+            "tasks": [item.to_dict() for item in self.tasks],
+        }
+
+
+@dataclass(frozen=True)
+class TaskMoveResult:
+    """Result of claiming or completing a Project State task."""
+
+    path: str
+    created: bool = False
+    message: str = ""
+    task: str = ""
+    from_section: str = ""
+    to_section: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)

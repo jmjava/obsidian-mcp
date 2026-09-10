@@ -29,6 +29,27 @@ _SECRET_PATTERNS = (
 _UNSAFE_SLUG_RE = re.compile(r"[^a-z0-9-]+")
 _REPEAT_DASH_RE = re.compile(r"-{2,}")
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(\S.*)$")
+_BULLET_RE = re.compile(r"^[-*+]\s+(?:\[([ xX])\]\s+)?(.*\S)\s*$")
+_LEADING_BULLET_RE = re.compile(r"^[-*+]\s+")
+_LEADING_CHECKBOX_RE = re.compile(r"^\[[ xX]\]\s+")
+
+_PROSE_FIELDS = {
+    "objective": "objective",
+    "current state": "current_state",
+}
+_LIST_FIELDS = {
+    "architecture": "architecture",
+    "completed": "completed",
+    "in progress": "in_progress",
+    "blocked": "blocked",
+    "next steps": "next_steps",
+    "important files": "important_files",
+    "notes": "notes",
+}
+
+
+class TaskMatchError(ValueError):
+    """Raised when a task query matches zero or more than one bullet."""
 
 
 def slugify(value: str) -> str:
@@ -193,6 +214,134 @@ def excerpt_around(text: str, terms: Sequence[str], *, limit: int = 240) -> str:
     return f"{prefix}{snippet}{suffix}"
 
 
+def strip_frontmatter(markdown: str) -> str:
+    """Remove a leading YAML frontmatter block when present."""
+    if not markdown.startswith("---"):
+        return markdown
+    rest = markdown[3:]
+    if rest.startswith("\n"):
+        rest = rest[1:]
+    end = rest.find("\n---")
+    if end < 0:
+        return markdown
+    return rest[end + 4 :].lstrip("\n")
+
+
+def parse_bullets(text: str) -> list[str]:
+    """Extract Markdown bullet texts, stripping optional checkbox markers."""
+    items: list[str] = []
+    for line in text.splitlines():
+        match = _BULLET_RE.match(line)
+        if not match:
+            continue
+        item = match.group(2).strip()
+        if item:
+            items.append(item)
+    return items
+
+
+def parse_open_checkboxes(text: str) -> list[str]:
+    """Extract unchecked ``- [ ]`` checkbox items from an Agent Queue note."""
+    items: list[str] = []
+    for line in text.splitlines():
+        match = _BULLET_RE.match(line)
+        if not match:
+            continue
+        mark = match.group(1)
+        item = match.group(2).strip()
+        if mark == " " and item:
+            items.append(item)
+    return items
+
+
+def parse_project_state(markdown: str) -> dict[str, str | list[str]]:
+    """Parse Project State.md into update_project_state kwargs."""
+    parsed: dict[str, str | list[str]] = {
+        "objective": "",
+        "current_state": "",
+        "architecture": [],
+        "completed": [],
+        "in_progress": [],
+        "blocked": [],
+        "next_steps": [],
+        "important_files": [],
+        "notes": [],
+    }
+    for title, body in _iter_level2_sections(markdown):
+        if title in _PROSE_FIELDS:
+            parsed[_PROSE_FIELDS[title]] = body.strip()
+        elif title in _LIST_FIELDS:
+            parsed[_LIST_FIELDS[title]] = parse_bullets(body)
+    return parsed
+
+
+def _iter_level2_sections(markdown: str) -> list[tuple[str, str]]:
+    sections: list[tuple[str, str]] = []
+    current_title: str | None = None
+    current_lines: list[str] = []
+
+    def flush() -> None:
+        nonlocal current_title, current_lines
+        if current_title is not None:
+            sections.append((current_title, "\n".join(current_lines).strip()))
+        current_title = None
+        current_lines = []
+
+    for line in strip_frontmatter(markdown).splitlines():
+        level = heading_level(line)
+        if level == 1:
+            continue
+        if level == 2:
+            flush()
+            current_title = heading_title(line)
+            continue
+        if current_title is not None:
+            current_lines.append(line)
+    flush()
+    return sections
+
+
+def normalize_task_text(value: str) -> str:
+    """Normalize a bullet or checkbox line for matching."""
+    text = value.strip()
+    text = _LEADING_BULLET_RE.sub("", text)
+    text = _LEADING_CHECKBOX_RE.sub("", text)
+    return " ".join(text.split()).casefold()
+
+
+def find_matching_task(items: Sequence[str], query: str) -> str:
+    """Return the unique item matching ``query`` exactly or as a substring."""
+    needle = normalize_task_text(query)
+    if not needle:
+        raise TaskMatchError("task text is required")
+    exact = [item for item in items if normalize_task_text(item) == needle]
+    if len(exact) == 1:
+        return exact[0]
+    if len(exact) > 1:
+        raise TaskMatchError(f"Ambiguous task match for {query!r}")
+    partial = [item for item in items if needle in normalize_task_text(item)]
+    if len(partial) == 1:
+        return partial[0]
+    if len(partial) > 1:
+        raise TaskMatchError(f"Ambiguous task match for {query!r}")
+    raise TaskMatchError(f"No matching task for {query!r}")
+
+
+def move_task_bullet(
+    source: Sequence[str],
+    dest: Sequence[str],
+    query: str,
+) -> tuple[list[str], list[str], str]:
+    """Move the unique matching bullet from ``source`` onto ``dest``."""
+    matched = find_matching_task(source, query)
+    new_source = list(source)
+    new_source.remove(matched)
+    new_dest = list(dest)
+    if not any(normalize_task_text(item) == normalize_task_text(matched) for item in new_dest):
+        new_dest.append(matched)
+    return new_source, new_dest, matched
+
+
 def append_under_heading(existing: str, content: str, heading: str | None = None) -> str:
     """Append content under a heading, creating the heading when missing."""
     content = redact_secrets(content.rstrip())
@@ -237,10 +386,12 @@ def append_under_heading(existing: str, content: str, heading: str | None = None
 
 __all__ = [
     "SECRET_PLACEHOLDER",
+    "TaskMatchError",
     "append_under_heading",
     "bullet_list",
     "excerpt_around",
     "extract_title",
+    "find_matching_task",
     "format_date",
     "format_frontmatter",
     "format_heading_time",
@@ -249,8 +400,14 @@ __all__ = [
     "heading_title",
     "join_blocks",
     "local_now",
+    "move_task_bullet",
     "normalize_heading",
+    "normalize_task_text",
+    "parse_bullets",
+    "parse_open_checkboxes",
+    "parse_project_state",
     "redact_secrets",
     "section",
     "slugify",
+    "strip_frontmatter",
 ]

@@ -7,10 +7,14 @@ import pytest
 
 from obsidian_dev_memory.markdown import (
     SECRET_PLACEHOLDER,
+    TaskMatchError,
     append_under_heading,
     bullet_list,
     format_frontmatter,
     format_heading_time,
+    move_task_bullet,
+    parse_open_checkboxes,
+    parse_project_state,
     redact_secrets,
     section,
     slugify,
@@ -88,6 +92,119 @@ def test_bullet_list_and_secret_redaction() -> None:
     assert redact_secrets("token: ghp_abcdefghijklmnopqrstuvwxyz1234") == (
         f"token: {SECRET_PLACEHOLDER}"
     )
+
+
+SAMPLE_PROJECT_STATE = """---
+type: project-state
+project: spring-auth
+updated: 2026-08-22T11:42:00-04:00
+---
+
+# Project State
+
+## Objective
+
+Ship consent auto-approval
+
+## Current State
+
+Design complete
+
+## Architecture
+
+- stdio MCP
+
+## Completed
+
+- Wired vault
+
+## In Progress
+
+- Existing claim
+
+## Next Steps
+
+- Add characterization tests for Order Status API
+- Document the Automations starter pack [repo::jmjava/Uberorchbot]
+- [ ] checkbox-shaped leftover
+
+## Notes
+
+- Keep this
+"""
+
+
+def test_parse_project_state_next_steps_bullets() -> None:
+    parsed = parse_project_state(SAMPLE_PROJECT_STATE)
+    assert parsed["objective"] == "Ship consent auto-approval"
+    assert parsed["current_state"] == "Design complete"
+    assert parsed["architecture"] == ["stdio MCP"]
+    assert parsed["completed"] == ["Wired vault"]
+    assert parsed["in_progress"] == ["Existing claim"]
+    assert parsed["next_steps"] == [
+        "Add characterization tests for Order Status API",
+        "Document the Automations starter pack [repo::jmjava/Uberorchbot]",
+        "checkbox-shaped leftover",
+    ]
+    assert parsed["notes"] == ["Keep this"]
+    assert parsed["blocked"] == []
+
+
+def test_move_next_step_to_in_progress() -> None:
+    parsed = parse_project_state(SAMPLE_PROJECT_STATE)
+    next_steps, in_progress, matched = move_task_bullet(
+        parsed["next_steps"],
+        parsed["in_progress"],
+        "characterization",
+    )
+    assert matched == "Add characterization tests for Order Status API"
+    assert matched not in next_steps
+    assert "Document the Automations starter pack [repo::jmjava/Uberorchbot]" in next_steps
+    assert in_progress == ["Existing claim", matched]
+
+
+def test_move_in_progress_to_completed() -> None:
+    parsed = parse_project_state(SAMPLE_PROJECT_STATE)
+    in_progress, completed, matched = move_task_bullet(
+        parsed["in_progress"],
+        parsed["completed"],
+        "Existing claim",
+    )
+    assert matched == "Existing claim"
+    assert in_progress == []
+    assert completed == ["Wired vault", "Existing claim"]
+
+
+def test_move_task_accepts_raw_bullet_query() -> None:
+    source = ["Add characterization tests for Order Status API"]
+    next_steps, in_progress, matched = move_task_bullet(
+        source, [], "- Add characterization tests for Order Status API"
+    )
+    assert matched == source[0]
+    assert next_steps == []
+    assert in_progress == source
+
+
+def test_move_task_missing_and_ambiguous() -> None:
+    items = ["Add characterization tests", "Add docs"]
+    with pytest.raises(TaskMatchError, match="No matching"):
+        move_task_bullet(items, [], "missing")
+    with pytest.raises(TaskMatchError, match="Ambiguous"):
+        move_task_bullet(["Add tests", "Add tests later"], [], "Add")
+
+
+def test_parse_open_checkboxes_skips_checked_items() -> None:
+    text = """# Agent Queue
+
+- [ ] Add characterization tests #agent [repo::jmjava/dogfood-api]
+- [x] Already done #agent
+- [ ] Personal chore
+- not a checkbox
+"""
+    assert parse_open_checkboxes(text) == [
+        "Add characterization tests #agent [repo::jmjava/dogfood-api]",
+        "Personal chore",
+    ]
 
 
 def test_heading_time_uses_timezone_name() -> None:

@@ -250,6 +250,9 @@ It fails clearly when the target project or vault is missing, and it merges MCP 
 | `capture_work_session` | Append a timestamped section to today's session note |
 | `record_decision` | Write a durable decision note |
 | `update_project_state` | Replace the concise project-state note |
+| `list_open_tasks` | Scan Project State Next Steps plus optional `Agent Queue.md` checkboxes |
+| `claim_task` | Move a Next Steps bullet to In Progress (same rewrite as `update_project_state`) |
+| `complete_task` | Move an In Progress bullet to Completed |
 | `search_memory` | Local filename and text search over project memory |
 | `read_note` | Read one vault-relative Markdown file |
 | `append_daily_note` | Append to `Daily/YYYY-MM-DD.md` |
@@ -260,10 +263,13 @@ It fails clearly when the target project or vault is missing, and it merges MCP 
 
 `capture_work_session` accepts an optional `repository_path`. When that path is a Git repository, the note records repository name, branch, short SHA, dirty state, and a short changed-file list. Full diffs are never written. A non-Git path is ignored.
 
+`list_open_tasks` returns Next Steps bullets and, when `AI Memory/Agent Queue.md` exists, unchecked `- [ ]` lines. `claim_task` / `complete_task` parse the current Project State, move one matching bullet, and rewrite the note through `update_project_state` so other sections are preserved. They do not write daily notes. Match by exact text or a unique substring.
+
 ## Vault layout
 
 ```text
 AI Memory/
+├── Agent Queue.md          # optional human checkbox list
 └── Projects/
     └── <project-slug>/
         ├── Project State.md

@@ -11,6 +11,7 @@ from pathlib import Path
 
 from obsidian_dev_memory.git_context import collect_git_context
 from obsidian_dev_memory.markdown import (
+    TaskMatchError,
     append_under_heading,
     excerpt_around,
     extract_title,
@@ -20,6 +21,10 @@ from obsidian_dev_memory.markdown import (
     format_iso_datetime,
     join_blocks,
     local_now,
+    move_task_bullet,
+    normalize_task_text,
+    parse_open_checkboxes,
+    parse_project_state,
     redact_secrets,
     section,
     slugify,
@@ -27,12 +32,16 @@ from obsidian_dev_memory.markdown import (
 from obsidian_dev_memory.models import (
     GitInfo,
     MemoryDocument,
+    OpenTask,
+    OpenTaskList,
     ProjectContext,
     SearchHit,
+    TaskMoveResult,
     WriteResult,
 )
 
 DEFAULT_MEMORY_ROOT = "AI Memory"
+DEFAULT_AGENT_QUEUE = "Agent Queue.md"
 DEFAULT_CONTEXT_LIMIT = 4000
 DEFAULT_SEARCH_LIMIT = 20
 DEFAULT_EXCERPT_LIMIT = 240
@@ -273,6 +282,140 @@ class Vault:
             path=self.relative_path(path),
             created=created,
             message="Updated project state",
+        )
+
+    def agent_queue_path(self) -> Path:
+        return self.safe_path(self.memory_root, DEFAULT_AGENT_QUEUE)
+
+    def list_open_tasks(
+        self,
+        project: str,
+        include_agent_queue: bool = True,
+    ) -> OpenTaskList:
+        slug = self.project_slug(project)
+        tasks: list[OpenTask] = []
+        seen: set[str] = set()
+
+        state_path = self.project_state_path(project)
+        if state_path.exists() and state_path.is_file():
+            parsed = parse_project_state(self._read_text(state_path))
+            rel = self.relative_path(state_path)
+            for item in parsed["next_steps"]:
+                text = redact_secrets(str(item))
+                key = normalize_task_text(text)
+                if not key or key in seen:
+                    continue
+                seen.add(key)
+                tasks.append(OpenTask(text=text, source="next_steps", path=rel))
+
+        if include_agent_queue:
+            queue_path = self.agent_queue_path()
+            if queue_path.exists() and queue_path.is_file():
+                rel = self.relative_path(queue_path)
+                for item in parse_open_checkboxes(self._read_text(queue_path)):
+                    text = redact_secrets(item)
+                    key = normalize_task_text(text)
+                    if not key or key in seen:
+                        continue
+                    seen.add(key)
+                    tasks.append(OpenTask(text=text, source="agent_queue", path=rel))
+
+        return OpenTaskList(project=slug, tasks=tasks)
+
+    def claim_task(
+        self,
+        project: str,
+        task: str,
+        now: datetime | None = None,
+    ) -> TaskMoveResult:
+        parsed = self._load_project_state(project)
+        in_progress = [str(item) for item in parsed["in_progress"]]
+        already = self._exact_task_match(in_progress, task)
+        if already is not None:
+            raise VaultError(f"Task already in progress: {already}")
+        try:
+            next_steps, in_progress, matched = move_task_bullet(
+                [str(item) for item in parsed["next_steps"]],
+                in_progress,
+                task,
+            )
+        except TaskMatchError as exc:
+            raise VaultError(str(exc)) from exc
+        parsed["next_steps"] = next_steps
+        parsed["in_progress"] = in_progress
+        return self._rewrite_moved_task(
+            project=project,
+            parsed=parsed,
+            matched=matched,
+            from_section="Next Steps",
+            to_section="In Progress",
+            message="Claimed task",
+            now=now,
+        )
+
+    def complete_task(
+        self,
+        project: str,
+        task: str,
+        now: datetime | None = None,
+    ) -> TaskMoveResult:
+        parsed = self._load_project_state(project)
+        try:
+            in_progress, completed, matched = move_task_bullet(
+                [str(item) for item in parsed["in_progress"]],
+                [str(item) for item in parsed["completed"]],
+                task,
+            )
+        except TaskMatchError as exc:
+            raise VaultError(str(exc)) from exc
+        parsed["in_progress"] = in_progress
+        parsed["completed"] = completed
+        return self._rewrite_moved_task(
+            project=project,
+            parsed=parsed,
+            matched=matched,
+            from_section="In Progress",
+            to_section="Completed",
+            message="Completed task",
+            now=now,
+        )
+
+    def _load_project_state(self, project: str) -> dict[str, str | list[str]]:
+        path = self.project_state_path(project)
+        if not path.exists() or not path.is_file():
+            return parse_project_state("")
+        return parse_project_state(self._read_text(path))
+
+    def _exact_task_match(self, items: Sequence[str], query: str) -> str | None:
+        needle = normalize_task_text(query)
+        if not needle:
+            raise VaultError("task text is required")
+        exact = [item for item in items if normalize_task_text(item) == needle]
+        if len(exact) == 1:
+            return exact[0]
+        if len(exact) > 1:
+            raise VaultError(f"Ambiguous task match for {query!r}")
+        return None
+
+    def _rewrite_moved_task(
+        self,
+        *,
+        project: str,
+        parsed: dict[str, str | list[str]],
+        matched: str,
+        from_section: str,
+        to_section: str,
+        message: str,
+        now: datetime | None,
+    ) -> TaskMoveResult:
+        written = self.update_project_state(project=project, now=now, **parsed)
+        return TaskMoveResult(
+            path=written.path,
+            created=written.created,
+            message=message,
+            task=redact_secrets(matched),
+            from_section=from_section,
+            to_section=to_section,
         )
 
     def search_memory(

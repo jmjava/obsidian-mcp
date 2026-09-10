@@ -14,7 +14,10 @@ from obsidian_dev_memory.server import (
     list_tool_names,
     tool_append_daily_note,
     tool_capture_work_session,
+    tool_claim_task,
+    tool_complete_task,
     tool_get_project_context,
+    tool_list_open_tasks,
     tool_read_note,
     tool_record_decision,
     tool_search_memory,
@@ -31,6 +34,9 @@ EXPECTED_TOOLS = {
     "search_memory",
     "read_note",
     "append_daily_note",
+    "list_open_tasks",
+    "claim_task",
+    "complete_task",
 }
 
 
@@ -92,6 +98,30 @@ def test_read_note_tool_rejects_escape(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     with pytest.raises(VaultPathError):
         tool_read_note(vault, "../../etc/passwd")
+
+
+def test_task_tools_claim_and_complete(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    tool_update_project_state(
+        vault,
+        "spring-auth",
+        objective="Ship consent",
+        next_steps=["Add characterization tests", "Write docs"],
+        now=STAMP,
+    )
+    listed = tool_list_open_tasks(vault, "spring-auth")
+    assert [item["text"] for item in listed["tasks"]] == [
+        "Add characterization tests",
+        "Write docs",
+    ]
+    claimed = tool_claim_task(vault, "spring-auth", "characterization", now=STAMP)
+    assert claimed["from_section"] == "Next Steps"
+    assert claimed["to_section"] == "In Progress"
+    remaining = tool_list_open_tasks(vault, "spring-auth")
+    assert [item["text"] for item in remaining["tasks"]] == ["Write docs"]
+    done = tool_complete_task(vault, "spring-auth", "characterization", now=STAMP)
+    assert done["to_section"] == "Completed"
+    assert tool_list_open_tasks(vault, "spring-auth")["tasks"][0]["text"] == "Write docs"
 
 
 def test_create_server_registers_expected_tools(tmp_path: Path) -> None:
