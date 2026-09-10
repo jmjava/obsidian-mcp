@@ -272,6 +272,27 @@ def test_move_next_step_or_in_progress_to_blocked() -> None:
     assert blocked == ["Waiting on review", next_match, "Existing claim"]
 
 
+def test_move_blocked_to_next_steps() -> None:
+    parsed = parse_project_state(SAMPLE_PROJECT_STATE)
+    blocked, next_steps, matched = move_task_bullet(
+        parsed["blocked"],
+        parsed["next_steps"],
+        "review",
+    )
+    assert matched == "Waiting on review"
+    assert blocked == []
+    assert next_steps == [
+        "Add characterization tests for Order Status API",
+        "Document the Automations starter pack [repo::jmjava/Uberorchbot]",
+        "checkbox-shaped leftover",
+        "Waiting on review",
+    ]
+    with pytest.raises(TaskMatchError, match="No matching"):
+        move_task_bullet(blocked, next_steps, "review")
+    with pytest.raises(TaskMatchError, match="Ambiguous"):
+        move_task_bullet(["Add tests", "Add tests later"], next_steps, "Add")
+
+
 def test_find_task_across_sources_missing_and_ambiguous() -> None:
     sources = (
         ("Next Steps", ["Add characterization tests", "Write docs"]),

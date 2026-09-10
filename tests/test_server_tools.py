@@ -23,6 +23,7 @@ from obsidian_dev_memory.server import (
     tool_read_note,
     tool_record_decision,
     tool_search_memory,
+    tool_unblock_task,
     tool_update_project_state,
 )
 from obsidian_dev_memory.vault import Vault, VaultPathError
@@ -41,6 +42,7 @@ EXPECTED_TOOLS = {
     "claim_task",
     "complete_task",
     "block_task",
+    "unblock_task",
 }
 
 
@@ -135,6 +137,12 @@ def test_task_tools_claim_and_complete(tmp_path: Path) -> None:
     listed_blocked = tool_list_blocked_tasks(vault, "spring-auth")
     assert [item["text"] for item in listed_blocked["tasks"]] == ["Write docs"]
     assert listed_blocked["tasks"][0]["source"] == "blocked"
+    unblocked = tool_unblock_task(vault, "spring-auth", "Write docs", now=STAMP)
+    assert unblocked["from_section"] == "Blocked"
+    assert unblocked["to_section"] == "Next Steps"
+    assert unblocked["queue_updated"] is False
+    assert tool_list_blocked_tasks(vault, "spring-auth")["tasks"] == []
+    assert tool_list_open_tasks(vault, "spring-auth")["tasks"][0]["text"] == "Write docs"
 
 
 def test_task_tools_claim_checks_agent_queue(tmp_path: Path) -> None:
