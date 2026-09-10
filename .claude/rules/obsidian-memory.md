@@ -39,7 +39,7 @@ If a decision file with the same generated name already exists, the server adds 
 
 Call `update_project_state` when the overall project state materially changes. Keep that file concise. It is current state, not a session log.
 
-When claiming or finishing a Next Steps item, prefer `list_open_tasks`, `claim_task`, and `complete_task` over rewriting the whole state by hand. Those tools preserve other sections and do not overwrite daily notes.
+When claiming or finishing a Next Steps or Agent Queue item, prefer `list_open_tasks`, `claim_task`, and `complete_task` over rewriting the whole state by hand. Those tools preserve other Project State sections, may check a matching Agent Queue checkbox, and do not overwrite daily notes.
 
 ## Memory lookup
 

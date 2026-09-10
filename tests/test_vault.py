@@ -275,6 +275,206 @@ def test_claim_task_redacts_secrets_on_rewrite(tmp_path: Path) -> None:
     assert SECRET_PLACEHOLDER in text
 
 
+def _write_agent_queue(vault: Vault, body: str) -> Path:
+    queue = vault.root / "AI Memory" / "Agent Queue.md"
+    queue.parent.mkdir(parents=True, exist_ok=True)
+    queue.write_text(body, encoding="utf-8")
+    return queue
+
+
+def test_claim_task_checks_matching_agent_queue_checkbox(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    daily = vault.root / "Daily" / "2026-08-22.md"
+    daily.parent.mkdir()
+    daily.write_text("# Daily\n\nDo not overwrite me\n", encoding="utf-8")
+    vault.update_project_state(
+        "spring-auth",
+        objective="Ship consent",
+        current_state="Design complete",
+        architecture=["stdio MCP"],
+        completed=["Wired vault"],
+        next_steps=[
+            "Add characterization tests for Order Status API",
+            "Document the Automations starter pack",
+        ],
+        notes=["Keep this"],
+        now=STAMP,
+    )
+    queue = _write_agent_queue(
+        vault,
+        "# Agent Queue\n\n"
+        "- [ ] Add characterization tests for Order Status API #agent\n"
+        "- [ ] Fix docs-drift in orch-guide #agent\n"
+        "- [x] Finished item #agent\n",
+    )
+    claimed = vault.claim_task("spring-auth", "characterization", now=STAMP)
+    assert claimed.queue_updated is True
+    assert claimed.queue_path == "AI Memory/Agent Queue.md"
+    assert "checked Agent Queue item" in claimed.message
+    text = (vault.root / claimed.path).read_text(encoding="utf-8")
+    assert "Ship consent" in text
+    assert "stdio MCP" in text
+    assert "Wired vault" in text
+    assert "Keep this" in text
+    assert "Document the Automations starter pack" in text
+    queue_text = queue.read_text(encoding="utf-8")
+    assert "- [x] Add characterization tests for Order Status API #agent" in queue_text
+    assert "- [ ] Fix docs-drift in orch-guide #agent" in queue_text
+    assert "- [x] Finished item #agent" in queue_text
+    assert daily.read_text(encoding="utf-8") == "# Daily\n\nDo not overwrite me\n"
+    listed = vault.list_open_tasks("spring-auth")
+    assert [item.text for item in listed.tasks] == [
+        "Document the Automations starter pack",
+        "Fix docs-drift in orch-guide #agent",
+    ]
+
+
+def test_claim_task_from_queue_only_item(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    vault.update_project_state(
+        "spring-auth",
+        objective="Ship consent",
+        next_steps=["Write docs"],
+        notes=["Keep this"],
+        now=STAMP,
+    )
+    queue = _write_agent_queue(
+        vault,
+        "# Agent Queue\n\n- [ ] Fix docs-drift in orch-guide #agent\n- [ ] Personal chore\n",
+    )
+    claimed = vault.claim_task("spring-auth", "docs-drift", now=STAMP)
+    assert claimed.from_section == "Agent Queue"
+    assert claimed.to_section == "In Progress"
+    assert claimed.task == "Fix docs-drift in orch-guide #agent"
+    assert claimed.queue_updated is True
+    text = (vault.root / claimed.path).read_text(encoding="utf-8")
+    assert "## Objective" in text
+    assert "Write docs" in text.split("## Next Steps", 1)[1]
+    in_progress = text.split("## In Progress", 1)[1].split("##", 1)[0]
+    assert "Fix docs-drift in orch-guide #agent" in in_progress
+    assert "Keep this" in text
+    queue_text = queue.read_text(encoding="utf-8")
+    assert "- [x] Fix docs-drift in orch-guide #agent" in queue_text
+    assert "- [ ] Personal chore" in queue_text
+
+
+def test_complete_task_checks_matching_agent_queue_checkbox(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    daily = vault.root / "Daily" / "2026-08-22.md"
+    daily.parent.mkdir()
+    daily.write_text("# Daily\n\nDo not overwrite me\n", encoding="utf-8")
+    vault.update_project_state(
+        "spring-auth",
+        objective="Ship consent",
+        completed=["Wired vault"],
+        in_progress=["Add characterization tests for Order Status API"],
+        next_steps=["Document the Automations starter pack"],
+        notes=["Keep this"],
+        now=STAMP,
+    )
+    queue = _write_agent_queue(
+        vault,
+        "# Agent Queue\n\n"
+        "- [ ] Add characterization tests for Order Status API #agent\n"
+        "- [ ] Fix docs-drift in orch-guide #agent\n",
+    )
+    done = vault.complete_task("spring-auth", "characterization", now=STAMP)
+    assert done.from_section == "In Progress"
+    assert done.to_section == "Completed"
+    assert done.queue_updated is True
+    text = (vault.root / done.path).read_text(encoding="utf-8")
+    completed_block = text.split("## Completed", 1)[1].split("##", 1)[0]
+    assert "Wired vault" in completed_block
+    assert "Add characterization tests for Order Status API" in completed_block
+    assert "Document the Automations starter pack" in text
+    assert "Keep this" in text
+    assert "## In Progress" not in text
+    queue_text = queue.read_text(encoding="utf-8")
+    assert "- [x] Add characterization tests for Order Status API #agent" in queue_text
+    assert "- [ ] Fix docs-drift in orch-guide #agent" in queue_text
+    assert daily.read_text(encoding="utf-8") == "# Daily\n\nDo not overwrite me\n"
+
+
+def test_complete_task_from_queue_only_item(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    vault.update_project_state(
+        "spring-auth",
+        objective="Ship consent",
+        next_steps=["Write docs"],
+        now=STAMP,
+    )
+    _write_agent_queue(
+        vault,
+        "# Agent Queue\n\n- [ ] Fix docs-drift in orch-guide #agent\n",
+    )
+    done = vault.complete_task("spring-auth", "docs-drift", now=STAMP)
+    assert done.from_section == "Agent Queue"
+    assert done.to_section == "Completed"
+    assert done.queue_updated is True
+    text = (vault.root / done.path).read_text(encoding="utf-8")
+    assert "Write docs" in text
+    assert "Fix docs-drift in orch-guide #agent" in text.split("## Completed", 1)[1]
+
+
+def test_claim_task_redacts_secrets_in_agent_queue(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    vault.update_project_state(
+        "spring-auth",
+        next_steps=["Rotate password=hunter2"],
+        now=STAMP,
+    )
+    queue = _write_agent_queue(
+        vault,
+        "# Agent Queue\n\n- [ ] Rotate password=hunter2 #agent\n- [ ] Keep this\n",
+    )
+    claimed = vault.claim_task("spring-auth", "Rotate", now=STAMP)
+    assert SECRET_PLACEHOLDER in claimed.task
+    assert "hunter2" not in claimed.task
+    state = (vault.root / claimed.path).read_text(encoding="utf-8")
+    assert "hunter2" not in state
+    queue_text = queue.read_text(encoding="utf-8")
+    assert "hunter2" not in queue_text
+    assert SECRET_PLACEHOLDER in queue_text
+    assert "- [ ] Keep this" in queue_text
+
+
+def test_claim_task_rejects_ambiguous_queue_only_match(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    vault.update_project_state(
+        "spring-auth",
+        next_steps=["Write docs"],
+        now=STAMP,
+    )
+    queue = _write_agent_queue(
+        vault,
+        "# Agent Queue\n\n- [ ] Add tests\n- [ ] Add tests later\n",
+    )
+    with pytest.raises(VaultError, match="Ambiguous"):
+        vault.claim_task("spring-auth", "Add")
+    assert queue.read_text(encoding="utf-8") == (
+        "# Agent Queue\n\n- [ ] Add tests\n- [ ] Add tests later\n"
+    )
+
+
+def test_claim_task_skips_queue_when_match_is_not_unique(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    vault.update_project_state(
+        "spring-auth",
+        next_steps=["Add characterization tests"],
+        now=STAMP,
+    )
+    queue = _write_agent_queue(
+        vault,
+        "# Agent Queue\n\n- [ ] Add tests\n- [ ] Add tests later\n",
+    )
+    claimed = vault.claim_task("spring-auth", "characterization", now=STAMP)
+    assert claimed.queue_updated is False
+    assert claimed.from_section == "Next Steps"
+    assert queue.read_text(encoding="utf-8") == (
+        "# Agent Queue\n\n- [ ] Add tests\n- [ ] Add tests later\n"
+    )
+
+
 def test_invalid_daily_date_is_rejected(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     with pytest.raises(VaultError, match="YYYY-MM-DD"):

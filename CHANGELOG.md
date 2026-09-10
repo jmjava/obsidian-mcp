@@ -7,6 +7,7 @@ All notable changes to this project are documented in this file.
 ### Added
 
 - Optional task-queue tools: `list_open_tasks`, `claim_task`, and `complete_task`.
+- `claim_task` / `complete_task` check a unique matching `AI Memory/Agent Queue.md` checkbox in place.
 - Claude Code project setup: `.mcp.json` example, `.claude/rules/obsidian-memory.md`, and installer support.
 - Claude Desktop configuration notes that reuse the same `mcpServers` stdio entry.
 
