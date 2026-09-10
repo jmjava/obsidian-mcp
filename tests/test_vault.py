@@ -6,7 +6,11 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from obsidian_dev_memory.markdown import SECRET_PLACEHOLDER
+from obsidian_dev_memory.markdown import (
+    SECRET_PLACEHOLDER,
+    TaskMatchError,
+    find_matching_task,
+)
 from obsidian_dev_memory.vault import Vault, VaultError, VaultPathError
 
 STAMP = datetime(2026, 8, 22, 11, 42, tzinfo=ZoneInfo("America/New_York"))
@@ -155,6 +159,84 @@ def test_prevents_escaping_vault_root_via_symlink(tmp_path: Path) -> None:
     (vault.root / "leak").symlink_to(outside)
     with pytest.raises(VaultPathError, match="escapes"):
         vault.read_note("leak/secret.txt")
+
+
+def test_list_blocked_tasks_reads_blocked_and_blockers(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    daily = vault.root / "Daily" / "2026-08-22.md"
+    daily.parent.mkdir()
+    daily.write_text("# Daily\n\nDo not overwrite me\n", encoding="utf-8")
+    vault.ensure_project("spring-auth")
+    state = vault.project_state_path("spring-auth")
+    state.write_text(
+        "# Project State\n\n"
+        "## Next Steps\n\n"
+        "- Write docs\n\n"
+        "## In Progress\n\n"
+        "- Already claimed\n\n"
+        "## Blocked\n\n"
+        "- Waiting on review\n"
+        "- Add tests\n\n"
+        "## Blockers\n\n"
+        "- External dependency\n"
+        "- Add tests later\n",
+        encoding="utf-8",
+    )
+    original = state.read_text(encoding="utf-8")
+    listed = vault.list_blocked_tasks("spring-auth")
+    assert listed.project == "spring-auth"
+    assert [item.text for item in listed.tasks] == [
+        "Waiting on review",
+        "Add tests",
+        "External dependency",
+        "Add tests later",
+    ]
+    assert all(item.source == "blocked" for item in listed.tasks)
+    assert all(item.path.endswith("Project State.md") for item in listed.tasks)
+    texts = [item.text for item in listed.tasks]
+    assert "Write docs" not in texts
+    assert "Already claimed" not in texts
+    assert state.read_text(encoding="utf-8") == original
+    assert daily.read_text(encoding="utf-8") == "# Daily\n\nDo not overwrite me\n"
+    with pytest.raises(TaskMatchError, match="Ambiguous"):
+        find_matching_task(texts, "Add")
+    empty = vault.list_blocked_tasks("missing-project")
+    assert empty.tasks == []
+    state.write_text(
+        "# Project State\n\n"
+        "## Blocked\n\n"
+        "- Waiting on review\n\n"
+        "## Blockers\n\n"
+        "- Waiting on review\n",
+        encoding="utf-8",
+    )
+    deduped = vault.list_blocked_tasks("spring-auth")
+    assert [item.text for item in deduped.tasks] == ["Waiting on review"]
+
+
+def test_list_blocked_tasks_redacts_secrets_without_rewriting(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    daily = vault.root / "Daily" / "2026-08-22.md"
+    daily.parent.mkdir()
+    daily.write_text("# Daily\n\nDo not overwrite me\n", encoding="utf-8")
+    vault.ensure_project("spring-auth")
+    state = vault.project_state_path("spring-auth")
+    raw = (
+        "# Project State\n\n"
+        "## Blocked\n\n"
+        "- Rotate password=hunter2\n"
+        "- Waiting on review\n"
+    )
+    state.write_text(raw, encoding="utf-8")
+    listed = vault.list_blocked_tasks("spring-auth")
+    assert [item.text for item in listed.tasks] == [
+        f"Rotate {SECRET_PLACEHOLDER}",
+        "Waiting on review",
+    ]
+    assert "hunter2" not in listed.tasks[0].text
+    assert state.read_text(encoding="utf-8") == raw
+    assert "hunter2" in raw
+    assert daily.read_text(encoding="utf-8") == "# Daily\n\nDo not overwrite me\n"
 
 
 def test_list_open_tasks_reads_next_steps_and_agent_queue(tmp_path: Path) -> None:

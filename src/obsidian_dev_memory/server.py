@@ -163,6 +163,15 @@ def create_server(vault: Vault | None = None) -> Any:
         ).to_dict()
 
     @mcp.tool()
+    def list_blocked_tasks(project: str) -> dict[str, Any]:
+        """List Blocked or Blockers bullets from Project State.
+
+        Scans Project State ## Blocked and ## Blockers sections. Does not
+        write vault files or daily notes.
+        """
+        return active_vault.list_blocked_tasks(project).to_dict()
+
+    @mcp.tool()
     def claim_task(project: str, task: str) -> dict[str, Any]:
         """Move a Next Steps or Agent Queue item to In Progress.
 
@@ -323,6 +332,10 @@ def tool_list_open_tasks(
     include_agent_queue: bool = True,
 ) -> dict[str, Any]:
     return vault.list_open_tasks(project, include_agent_queue=include_agent_queue).to_dict()
+
+
+def tool_list_blocked_tasks(vault: Vault, project: str) -> dict[str, Any]:
+    return vault.list_blocked_tasks(project).to_dict()
 
 
 def tool_claim_task(

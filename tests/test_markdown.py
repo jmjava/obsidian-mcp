@@ -10,6 +10,7 @@ from obsidian_dev_memory.markdown import (
     TaskMatchError,
     append_under_heading,
     bullet_list,
+    find_matching_task,
     find_task_across_sources,
     format_frontmatter,
     format_heading_time,
@@ -154,6 +155,47 @@ def test_parse_project_state_next_steps_bullets() -> None:
     ]
     assert parsed["notes"] == ["Keep this"]
     assert parsed["blocked"] == ["Waiting on review"]
+
+
+def test_parse_project_state_merges_blocked_and_blockers() -> None:
+    markdown = """# Project State
+
+## Next Steps
+
+- Write docs
+
+## Blocked
+
+- Waiting on review
+- Add tests
+
+## Blockers
+
+- External dependency
+- Add tests later
+"""
+    parsed = parse_project_state(markdown)
+    assert parsed["next_steps"] == ["Write docs"]
+    assert parsed["blocked"] == [
+        "Waiting on review",
+        "Add tests",
+        "External dependency",
+        "Add tests later",
+    ]
+    with pytest.raises(TaskMatchError, match="Ambiguous"):
+        find_matching_task(parsed["blocked"], "Add")
+    with pytest.raises(TaskMatchError, match="No matching"):
+        find_matching_task(parsed["blocked"], "Write docs")
+    assert find_matching_task(parsed["blocked"], "review") == "Waiting on review"
+
+
+def test_parse_blockers_keeps_secret_until_redact() -> None:
+    parsed = parse_project_state(
+        "# Project State\n\n## Blockers\n\n- Rotate password=hunter2\n"
+    )
+    assert parsed["blocked"] == ["Rotate password=hunter2"]
+    assert redact_secrets(parsed["blocked"][0]) == f"Rotate {SECRET_PLACEHOLDER}"
+    assert "hunter2" not in redact_secrets(parsed["blocked"][0])
 
 
 def test_move_next_step_to_in_progress() -> None:

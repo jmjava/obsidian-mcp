@@ -77,7 +77,7 @@ class WriteResult:
 
 @dataclass(frozen=True)
 class OpenTask:
-    """One open Next Step or Agent Queue checkbox."""
+    """One Next Step, Agent Queue checkbox, or Blocked / Blockers bullet."""
 
     text: str
     source: str
@@ -89,7 +89,7 @@ class OpenTask:
 
 @dataclass(frozen=True)
 class OpenTaskList:
-    """Open tasks returned by list_open_tasks."""
+    """Tasks returned by list_open_tasks or list_blocked_tasks."""
 
     project: str
     tasks: list[OpenTask] = field(default_factory=list)

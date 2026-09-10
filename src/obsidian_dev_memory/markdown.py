@@ -306,7 +306,10 @@ def parse_project_state(markdown: str) -> dict[str, str | list[str]]:
         if title in _PROSE_FIELDS:
             parsed[_PROSE_FIELDS[title]] = body.strip()
         elif title in _LIST_FIELDS:
-            parsed[_LIST_FIELDS[title]] = parse_bullets(body)
+            key = _LIST_FIELDS[title]
+            existing = parsed[key]
+            if isinstance(existing, list):
+                parsed[key] = existing + parse_bullets(body)
     return parsed
 
 

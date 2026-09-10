@@ -325,6 +325,25 @@ class Vault:
 
         return OpenTaskList(project=slug, tasks=tasks)
 
+    def list_blocked_tasks(self, project: str) -> OpenTaskList:
+        slug = self.project_slug(project)
+        tasks: list[OpenTask] = []
+        seen: set[str] = set()
+
+        state_path = self.project_state_path(project)
+        if state_path.exists() and state_path.is_file():
+            parsed = parse_project_state(self._read_text(state_path))
+            rel = self.relative_path(state_path)
+            for item in parsed["blocked"]:
+                text = redact_secrets(str(item))
+                key = normalize_task_text(text)
+                if not key or key in seen:
+                    continue
+                seen.add(key)
+                tasks.append(OpenTask(text=text, source="blocked", path=rel))
+
+        return OpenTaskList(project=slug, tasks=tasks)
+
     def claim_task(
         self,
         project: str,
