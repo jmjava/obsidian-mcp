@@ -164,6 +164,7 @@ Follow-up:
        record_decision
        update_project_state
        list_open_tasks
+       list_blocked_tasks
        claim_task
        complete_task
        block_task

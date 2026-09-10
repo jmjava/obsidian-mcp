@@ -18,6 +18,7 @@ from obsidian_dev_memory.server import (
     tool_claim_task,
     tool_complete_task,
     tool_get_project_context,
+    tool_list_blocked_tasks,
     tool_list_open_tasks,
     tool_read_note,
     tool_record_decision,
@@ -36,6 +37,7 @@ EXPECTED_TOOLS = {
     "read_note",
     "append_daily_note",
     "list_open_tasks",
+    "list_blocked_tasks",
     "claim_task",
     "complete_task",
     "block_task",
@@ -130,6 +132,9 @@ def test_task_tools_claim_and_complete(tmp_path: Path) -> None:
     assert blocked["to_section"] == "Blocked"
     assert blocked["queue_updated"] is False
     assert tool_list_open_tasks(vault, "spring-auth")["tasks"] == []
+    listed_blocked = tool_list_blocked_tasks(vault, "spring-auth")
+    assert [item["text"] for item in listed_blocked["tasks"]] == ["Write docs"]
+    assert listed_blocked["tasks"][0]["source"] == "blocked"
 
 
 def test_task_tools_claim_checks_agent_queue(tmp_path: Path) -> None:
