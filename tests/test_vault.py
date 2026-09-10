@@ -751,3 +751,163 @@ def test_invalid_daily_date_is_rejected(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     with pytest.raises(VaultError, match="YYYY-MM-DD"):
         vault.append_daily_note("x", date="tomorrow")
+
+
+EXAMPLE_TODO = """---
+type: todo
+id: Q-EXAMPLE
+created: 2026-09-10
+status: open
+project: spring-auth
+---
+
+# Example leftover
+
+Open work that lives only in TODO.
+
+- [ ] Wire the TODO scanner
+- [x] Already finished
+"""
+
+
+def _write_todo(vault: Vault, name: str, body: str) -> Path:
+    path = vault.root / "TODO" / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding="utf-8")
+    return path
+
+
+def test_list_open_tasks_reads_todo_notes_without_project_state(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    example = _write_todo(vault, "2026-09-10-example.md", EXAMPLE_TODO)
+    nested = vault.root / "TODO" / "finished" / "2026-09-10-nested.md"
+    nested.parent.mkdir(parents=True, exist_ok=True)
+    nested.write_text(
+        "---\nstatus: open\nproject: spring-auth\n---\n\n# Nested leftover\n",
+        encoding="utf-8",
+    )
+    _write_todo(
+        vault,
+        "2026-09-10-other-project.md",
+        "---\nstatus: open\nproject: other-app\n---\n\n# Other project work\n",
+    )
+    _write_todo(
+        vault,
+        "2026-09-10-closed.md",
+        "---\nstatus: done\nproject: spring-auth\n---\n\n# Finished leftover\n",
+    )
+    listed = vault.list_open_tasks("spring-auth")
+    assert [(item.text, item.source, item.path) for item in listed.tasks] == [
+        ("Example leftover", "todo", "TODO/2026-09-10-example.md"),
+        ("Wire the TODO scanner", "todo_item", "TODO/2026-09-10-example.md"),
+    ]
+    texts = [item.text for item in listed.tasks]
+    assert "Already finished" not in texts
+    assert "Nested leftover" not in texts
+    assert "Other project work" not in texts
+    assert "Finished leftover" not in texts
+    assert example.read_text(encoding="utf-8") == EXAMPLE_TODO
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+    hidden_queue = vault.list_open_tasks("spring-auth", include_agent_queue=False)
+    assert [item.source for item in hidden_queue.tasks] == ["todo", "todo_item"]
+
+
+def test_claim_and_complete_unique_todo_note(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    example = _write_todo(vault, "2026-09-10-example.md", EXAMPLE_TODO)
+    claimed = vault.claim_task("spring-auth", "Example leftover", now=STAMP)
+    assert claimed.from_section == "TODO"
+    assert claimed.to_section == "In Progress"
+    assert claimed.task == "Example leftover"
+    assert claimed.todo_updated is True
+    assert claimed.todo_path == "TODO/2026-09-10-example.md"
+    assert claimed.queue_updated is False
+    assert "updated TODO note" in claimed.message
+    state = (vault.root / claimed.path).read_text(encoding="utf-8")
+    assert "Example leftover" in state.split("## In Progress", 1)[1]
+    todo_text = example.read_text(encoding="utf-8")
+    assert "status: in_progress" in todo_text
+    assert "- [ ] Wire the TODO scanner" in todo_text
+    remaining = [item.text for item in vault.list_open_tasks("spring-auth").tasks]
+    assert remaining == ["Wire the TODO scanner"]
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+    done = vault.complete_task("spring-auth", "Example leftover", now=STAMP)
+    assert done.from_section == "In Progress"
+    assert done.to_section == "Completed"
+    assert done.todo_updated is True
+    completed = (vault.root / done.path).read_text(encoding="utf-8")
+    assert "Example leftover" in completed.split("## Completed", 1)[1]
+    assert "status: done" in example.read_text(encoding="utf-8")
+    assert [item.text for item in vault.list_open_tasks("spring-auth").tasks] == [
+        "Wire the TODO scanner",
+    ]
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
+def test_claim_task_checks_unique_todo_checkbox(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    example = _write_todo(vault, "2026-09-10-example.md", EXAMPLE_TODO)
+    claimed = vault.claim_task("spring-auth", "Wire the TODO scanner", now=STAMP)
+    assert claimed.from_section == "TODO"
+    assert claimed.todo_updated is True
+    assert claimed.task == "Wire the TODO scanner"
+    todo_text = example.read_text(encoding="utf-8")
+    assert "- [x] Wire the TODO scanner" in todo_text
+    assert "status: open" in todo_text
+    remaining = [(item.text, item.source) for item in vault.list_open_tasks("spring-auth").tasks]
+    assert remaining == [("Example leftover", "todo")]
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
+def test_complete_task_from_todo_only_item(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    example = _write_todo(vault, "2026-09-10-example.md", EXAMPLE_TODO)
+    done = vault.complete_task("spring-auth", "Example leftover", now=STAMP)
+    assert done.from_section == "TODO"
+    assert done.to_section == "Completed"
+    assert done.todo_updated is True
+    assert "status: done" in example.read_text(encoding="utf-8")
+    state = (vault.root / done.path).read_text(encoding="utf-8")
+    assert "Example leftover" in state.split("## Completed", 1)[1]
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
+def test_list_open_tasks_redacts_todo_secrets_without_rewriting(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    raw = (
+        "---\nstatus: open\nproject: spring-auth\n---\n\n"
+        "# Rotate leftover\n\n- [ ] Rotate password=hunter2\n"
+    )
+    example = _write_todo(vault, "2026-09-10-example.md", raw)
+    listed = vault.list_open_tasks("spring-auth")
+    texts = [item.text for item in listed.tasks]
+    assert "Rotate leftover" in texts
+    assert any(SECRET_PLACEHOLDER in item.text for item in listed.tasks)
+    assert all("hunter2" not in item.text for item in listed.tasks)
+    assert example.read_text(encoding="utf-8") == raw
+    claimed = vault.claim_task("spring-auth", "Rotate leftover", now=STAMP)
+    assert "hunter2" not in claimed.task
+    state = (vault.root / claimed.path).read_text(encoding="utf-8")
+    assert "hunter2" not in state
+    checked = vault.claim_task("spring-auth", "Rotate password", now=STAMP)
+    assert SECRET_PLACEHOLDER in checked.task
+    assert "hunter2" not in checked.task
+    rewritten = (vault.root / checked.path).read_text(encoding="utf-8")
+    assert "hunter2" not in rewritten
+    assert SECRET_PLACEHOLDER in rewritten
+    assert "hunter2" not in example.read_text(encoding="utf-8")
+    assert f"- [x] Rotate {SECRET_PLACEHOLDER}" in example.read_text(encoding="utf-8")
+
+
+def test_claim_task_rejects_ambiguous_todo_match(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    _write_todo(
+        vault,
+        "2026-09-10-example.md",
+        "---\nstatus: open\nproject: spring-auth\n---\n\n"
+        "# Add tests\n\n- [ ] Add tests later\n",
+    )
+    with pytest.raises(VaultError, match="Ambiguous"):
+        vault.claim_task("spring-auth", "Add")
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()

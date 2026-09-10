@@ -44,7 +44,7 @@ If a decision file with the same generated name already exists, the server adds 
 
 Call `update_project_state` when the overall project state materially changes. Keep that file concise. It is current state, not a session log.
 
-When claiming, blocking, unblocking, or finishing a Next Steps or Agent Queue item, prefer `list_open_tasks`, `list_blocked_tasks`, `claim_task`, `block_task`, `unblock_task`, and `complete_task` over rewriting the whole state by hand. Those tools preserve other Project State sections, may check a matching Agent Queue checkbox (`claim_task` / `complete_task` only), and do not overwrite daily notes.
+When claiming, blocking, unblocking, or finishing a Next Steps, Agent Queue, or TODO/*.md item, prefer `list_open_tasks`, `list_blocked_tasks`, `claim_task`, `block_task`, `unblock_task`, and `complete_task` over rewriting the whole state by hand. Those tools preserve other Project State sections, may check a matching Agent Queue checkbox or update a matching TODO note (`claim_task` / `complete_task` only), and do not overwrite daily notes.
 
 ## Memory lookup
 

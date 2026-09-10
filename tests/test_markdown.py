@@ -16,10 +16,13 @@ from obsidian_dev_memory.markdown import (
     format_heading_time,
     move_open_checkbox,
     move_task_bullet,
+    parse_frontmatter_fields,
     parse_open_checkboxes,
+    parse_open_todo_entries,
     parse_project_state,
     redact_secrets,
     section,
+    set_frontmatter_field,
     slugify,
 )
 
@@ -374,3 +377,56 @@ def test_move_open_checkbox_missing_and_ambiguous() -> None:
 def test_heading_time_uses_timezone_name() -> None:
     stamp = datetime(2026, 8, 22, 11, 42, tzinfo=ZoneInfo("America/New_York"))
     assert format_heading_time(stamp) == "11:42 EDT"
+
+
+SAMPLE_TODO_NOTE = """---
+type: todo
+id: Q-EXAMPLE
+created: 2026-09-10
+status: open
+project: spring-auth
+---
+
+# Example leftover
+
+- [ ] Wire the TODO scanner
+- [x] Already finished
+"""
+
+
+def test_parse_frontmatter_fields_reads_scalars() -> None:
+    fields = parse_frontmatter_fields(SAMPLE_TODO_NOTE)
+    assert fields["type"] == "todo"
+    assert fields["status"] == "open"
+    assert fields["project"] == "spring-auth"
+    assert parse_frontmatter_fields("# No frontmatter\n") == {}
+
+
+def test_set_frontmatter_field_replaces_status_only() -> None:
+    updated = set_frontmatter_field(SAMPLE_TODO_NOTE, "status", "in_progress")
+    fields = parse_frontmatter_fields(updated)
+    assert fields["status"] == "in_progress"
+    assert fields["project"] == "spring-auth"
+    assert "# Example leftover" in updated
+    assert "- [ ] Wire the TODO scanner" in updated
+    assert updated.count("status:") == 1
+
+
+def test_parse_open_todo_entries_includes_open_note_and_unchecked_items() -> None:
+    assert parse_open_todo_entries(SAMPLE_TODO_NOTE, "2026-09-10-example") == [
+        ("Example leftover", "note"),
+        ("Wire the TODO scanner", "checkbox"),
+    ]
+    closed = SAMPLE_TODO_NOTE.replace("status: open", "status: done")
+    assert parse_open_todo_entries(closed, "2026-09-10-example") == [
+        ("Wire the TODO scanner", "checkbox"),
+    ]
+    in_progress = SAMPLE_TODO_NOTE.replace("status: open", "status: in_progress")
+    assert parse_open_todo_entries(
+        in_progress,
+        "2026-09-10-example",
+        note_statuses=frozenset({"open", "in_progress", "claimed"}),
+    ) == [
+        ("Example leftover", "note"),
+        ("Wire the TODO scanner", "checkbox"),
+    ]

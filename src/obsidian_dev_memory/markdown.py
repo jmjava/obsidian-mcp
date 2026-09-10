@@ -218,15 +218,99 @@ def excerpt_around(text: str, terms: Sequence[str], *, limit: int = 240) -> str:
 
 def strip_frontmatter(markdown: str) -> str:
     """Remove a leading YAML frontmatter block when present."""
-    if not markdown.startswith("---"):
+    split = _split_frontmatter(markdown)
+    if split is None:
         return markdown
+    _block, body = split
+    return body.lstrip("\n")
+
+
+def _split_frontmatter(markdown: str) -> tuple[str, str] | None:
+    """Return ``(frontmatter_block, remainder)`` or ``None`` when absent."""
+    if not markdown.startswith("---"):
+        return None
     rest = markdown[3:]
     if rest.startswith("\n"):
         rest = rest[1:]
     end = rest.find("\n---")
     if end < 0:
-        return markdown
-    return rest[end + 4 :].lstrip("\n")
+        return None
+    return rest[:end], rest[end + 4 :]
+
+
+def parse_frontmatter_fields(markdown: str) -> dict[str, str]:
+    """Parse scalar YAML frontmatter keys. Lists and nested maps are skipped."""
+    split = _split_frontmatter(markdown)
+    if split is None:
+        return {}
+    fields: dict[str, str] = {}
+    for line in split[0].splitlines():
+        if not line or line[0] in {" ", "\t", "-"}:
+            continue
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        key = key.strip()
+        if not key:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] in {"'", '"'} and value[-1] == value[0]:
+            value = value[1:-1]
+        fields[key] = value
+    return fields
+
+
+def set_frontmatter_field(markdown: str, key: str, value: str) -> str:
+    """Replace or insert one scalar frontmatter field. Other lines stay put."""
+    rendered = f"{key}: {_yaml_scalar(value)}"
+    split = _split_frontmatter(markdown)
+    if split is None:
+        prefix = format_frontmatter({key: value})
+        body = markdown if markdown.endswith("\n") or markdown == "" else markdown + "\n"
+        if not body:
+            return prefix + "\n"
+        return prefix + "\n" + body.lstrip("\n")
+    block, remainder = split
+    lines = block.splitlines()
+    key_re = re.compile(rf"^{re.escape(key)}\s*:")
+    replaced = False
+    updated_lines: list[str] = []
+    for line in lines:
+        if not replaced and key_re.match(line):
+            updated_lines.append(rendered)
+            replaced = True
+        else:
+            updated_lines.append(line)
+    if not replaced:
+        updated_lines.append(rendered)
+    updated = "---\n" + "\n".join(updated_lines) + "\n---" + remainder
+    if markdown.endswith("\n") and not updated.endswith("\n"):
+        updated += "\n"
+    return updated
+
+
+def parse_open_todo_entries(
+    markdown: str,
+    fallback_title: str,
+    *,
+    note_statuses: frozenset[str] | None = None,
+) -> list[tuple[str, str]]:
+    """Return ``(text, kind)`` for a TODO note and its unchecked items.
+
+    ``kind`` is ``note`` when frontmatter ``status`` is in ``note_statuses``
+    (default ``open``), or ``checkbox`` for each unchecked ``- [ ]`` line.
+    """
+    allowed = note_statuses if note_statuses is not None else frozenset({"open"})
+    entries: list[tuple[str, str]] = []
+    fields = parse_frontmatter_fields(markdown)
+    status = fields.get("status", "").strip().casefold()
+    if status in allowed:
+        title = extract_title(markdown, fallback_title).strip()
+        if title:
+            entries.append((title, "note"))
+    for item in parse_open_checkboxes(markdown):
+        entries.append((item, "checkbox"))
+    return entries
 
 
 def parse_bullets(text: str) -> list[str]:
@@ -472,10 +556,13 @@ __all__ = [
     "normalize_heading",
     "normalize_task_text",
     "parse_bullets",
+    "parse_frontmatter_fields",
     "parse_open_checkboxes",
+    "parse_open_todo_entries",
     "parse_project_state",
     "redact_secrets",
     "section",
+    "set_frontmatter_field",
     "slugify",
     "strip_frontmatter",
 ]

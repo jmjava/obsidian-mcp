@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- `list_open_tasks` includes top-level `TODO/*.md` notes with frontmatter `status: open` or unchecked items. `claim_task` / `complete_task` can match a unique TODO note without creating `Agent Queue.md`.
 - Optional task-queue tools: `list_open_tasks`, `list_blocked_tasks`, `claim_task`, `complete_task`, `block_task`, and `unblock_task`.
 - `claim_task` / `complete_task` check a unique matching `AI Memory/Agent Queue.md` checkbox in place.
 - `block_task` moves one Next Steps or In Progress bullet to Blocked through `update_project_state`.

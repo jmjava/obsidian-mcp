@@ -152,10 +152,12 @@ def create_server(vault: Vault | None = None) -> Any:
         project: str,
         include_agent_queue: bool = True,
     ) -> dict[str, Any]:
-        """List open Next Steps and optional Agent Queue checkboxes.
+        """List open Next Steps, optional Agent Queue, and TODO notes.
 
-        Scans Project State Next Steps plus AI Memory/Agent Queue.md unchecked
-        boxes when that note exists. Does not write vault files.
+        Scans Project State Next Steps, AI Memory/Agent Queue.md unchecked
+        boxes when that note exists, and top-level TODO/*.md notes with
+        frontmatter status: open or unchecked items. Does not write vault
+        files or invent Agent Queue.md.
         """
         return active_vault.list_open_tasks(
             project,
@@ -173,23 +175,25 @@ def create_server(vault: Vault | None = None) -> Any:
 
     @mcp.tool()
     def claim_task(project: str, task: str) -> dict[str, Any]:
-        """Move a Next Steps or Agent Queue item to In Progress.
+        """Move a Next Steps, Agent Queue, or TODO item to In Progress.
 
         Rewrites Project State.md the same way update_project_state does,
         preserving other sections. When a unique unchecked Agent Queue
-        checkbox matches, that line is checked in place. Never writes
-        daily notes.
+        checkbox matches, that line is checked in place. A unique open
+        TODO/*.md note or unchecked item can be claimed the same way.
+        Never writes daily notes or invents Agent Queue.md.
         """
         return active_vault.claim_task(project=project, task=task).to_dict()
 
     @mcp.tool()
     def complete_task(project: str, task: str) -> dict[str, Any]:
-        """Move an In Progress or Agent Queue item to Completed.
+        """Move an In Progress, Agent Queue, or TODO item to Completed.
 
         Rewrites Project State.md the same way update_project_state does,
         preserving other sections. When a unique unchecked Agent Queue
-        checkbox matches, that line is checked in place. Never writes
-        daily notes.
+        checkbox matches, that line is checked in place. A unique open
+        TODO/*.md note or unchecked item can be completed the same way.
+        Never writes daily notes or invents Agent Queue.md.
         """
         return active_vault.complete_task(project=project, task=task).to_dict()
 
