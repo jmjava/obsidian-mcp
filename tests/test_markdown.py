@@ -12,6 +12,7 @@ from obsidian_dev_memory.markdown import (
     bullet_list,
     format_frontmatter,
     format_heading_time,
+    move_open_checkbox,
     move_task_bullet,
     parse_open_checkboxes,
     parse_project_state,
@@ -193,18 +194,69 @@ def test_move_task_missing_and_ambiguous() -> None:
         move_task_bullet(["Add tests", "Add tests later"], [], "Add")
 
 
-def test_parse_open_checkboxes_skips_checked_items() -> None:
-    text = """# Agent Queue
+SAMPLE_AGENT_QUEUE = """# Agent Queue
+
+## Inbox
 
 - [ ] Add characterization tests #agent [repo::jmjava/dogfood-api]
 - [x] Already done #agent
 - [ ] Personal chore
 - not a checkbox
+
+## Later
+
+- [ ] Write the Automations starter pack docs
 """
-    assert parse_open_checkboxes(text) == [
+
+
+def test_parse_open_checkboxes_skips_checked_items() -> None:
+    assert parse_open_checkboxes(SAMPLE_AGENT_QUEUE) == [
         "Add characterization tests #agent [repo::jmjava/dogfood-api]",
         "Personal chore",
+        "Write the Automations starter pack docs",
     ]
+
+
+def test_move_open_checkbox_checks_only_the_matched_line() -> None:
+    updated, matched = move_open_checkbox(SAMPLE_AGENT_QUEUE, "characterization")
+    assert matched == "Add characterization tests #agent [repo::jmjava/dogfood-api]"
+    assert "- [x] Add characterization tests #agent [repo::jmjava/dogfood-api]" in updated
+    assert "- [x] Already done #agent" in updated
+    assert "- [ ] Personal chore" in updated
+    assert "- [ ] Write the Automations starter pack docs" in updated
+    assert "- not a checkbox" in updated
+    assert "## Inbox" in updated
+    assert "## Later" in updated
+    assert parse_open_checkboxes(updated) == [
+        "Personal chore",
+        "Write the Automations starter pack docs",
+    ]
+
+
+def test_move_open_checkbox_preserves_bullet_marker() -> None:
+    text = "* [ ] Starred chore\n- [ ] Dash chore\n"
+    updated, matched = move_open_checkbox(text, "Starred")
+    assert matched == "Starred chore"
+    assert updated == "* [x] Starred chore\n- [ ] Dash chore\n"
+
+
+def test_move_open_checkbox_redacts_secrets_on_rewritten_line() -> None:
+    text = "- [ ] Rotate password=hunter2 #agent\n- [ ] Keep this\n"
+    updated, matched = move_open_checkbox(text, "Rotate")
+    assert SECRET_PLACEHOLDER in matched
+    assert "hunter2" not in matched
+    assert "hunter2" not in updated
+    assert f"- [x] Rotate {SECRET_PLACEHOLDER} #agent" in updated
+    assert "- [ ] Keep this" in updated
+
+
+def test_move_open_checkbox_missing_and_ambiguous() -> None:
+    with pytest.raises(TaskMatchError, match="No matching"):
+        move_open_checkbox(SAMPLE_AGENT_QUEUE, "missing")
+    with pytest.raises(TaskMatchError, match="Ambiguous"):
+        move_open_checkbox("- [ ] Add tests\n- [ ] Add tests later\n", "Add")
+    with pytest.raises(TaskMatchError, match="No matching"):
+        move_open_checkbox("# Agent Queue\n\n- [x] Already done\n", "Already")
 
 
 def test_heading_time_uses_timezone_name() -> None:

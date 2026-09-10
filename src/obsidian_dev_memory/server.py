@@ -164,19 +164,23 @@ def create_server(vault: Vault | None = None) -> Any:
 
     @mcp.tool()
     def claim_task(project: str, task: str) -> dict[str, Any]:
-        """Move a Next Steps bullet to In Progress.
+        """Move a Next Steps or Agent Queue item to In Progress.
 
         Rewrites Project State.md the same way update_project_state does,
-        preserving other sections. Never writes daily notes.
+        preserving other sections. When a unique unchecked Agent Queue
+        checkbox matches, that line is checked in place. Never writes
+        daily notes.
         """
         return active_vault.claim_task(project=project, task=task).to_dict()
 
     @mcp.tool()
     def complete_task(project: str, task: str) -> dict[str, Any]:
-        """Move an In Progress bullet to Completed.
+        """Move an In Progress or Agent Queue item to Completed.
 
         Rewrites Project State.md the same way update_project_state does,
-        preserving other sections. Never writes daily notes.
+        preserving other sections. When a unique unchecked Agent Queue
+        checkbox matches, that line is checked in place. Never writes
+        daily notes.
         """
         return active_vault.complete_task(project=project, task=task).to_dict()
 

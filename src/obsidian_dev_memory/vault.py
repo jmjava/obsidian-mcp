@@ -15,12 +15,14 @@ from obsidian_dev_memory.markdown import (
     append_under_heading,
     excerpt_around,
     extract_title,
+    find_matching_task,
     format_date,
     format_frontmatter,
     format_heading_time,
     format_iso_datetime,
     join_blocks,
     local_now,
+    move_open_checkbox,
     move_task_bullet,
     normalize_task_text,
     parse_open_checkboxes,
@@ -333,24 +335,28 @@ class Vault:
         already = self._exact_task_match(in_progress, task)
         if already is not None:
             raise VaultError(f"Task already in progress: {already}")
+        next_steps = [str(item) for item in parsed["next_steps"]]
+        from_section = "Next Steps"
         try:
             next_steps, in_progress, matched = move_task_bullet(
-                [str(item) for item in parsed["next_steps"]],
+                next_steps,
                 in_progress,
                 task,
             )
         except TaskMatchError as exc:
-            raise VaultError(str(exc)) from exc
+            matched, from_section = self._fallback_to_agent_queue(task, exc)
+            in_progress = self._append_unique_task(in_progress, matched)
         parsed["next_steps"] = next_steps
         parsed["in_progress"] = in_progress
         return self._rewrite_moved_task(
             project=project,
             parsed=parsed,
             matched=matched,
-            from_section="Next Steps",
+            from_section=from_section,
             to_section="In Progress",
             message="Claimed task",
             now=now,
+            task_query=task,
         )
 
     def complete_task(
@@ -360,24 +366,29 @@ class Vault:
         now: datetime | None = None,
     ) -> TaskMoveResult:
         parsed = self._load_project_state(project)
+        in_progress = [str(item) for item in parsed["in_progress"]]
+        completed = [str(item) for item in parsed["completed"]]
+        from_section = "In Progress"
         try:
             in_progress, completed, matched = move_task_bullet(
-                [str(item) for item in parsed["in_progress"]],
-                [str(item) for item in parsed["completed"]],
+                in_progress,
+                completed,
                 task,
             )
         except TaskMatchError as exc:
-            raise VaultError(str(exc)) from exc
+            matched, from_section = self._fallback_to_agent_queue(task, exc)
+            completed = self._append_unique_task(completed, matched)
         parsed["in_progress"] = in_progress
         parsed["completed"] = completed
         return self._rewrite_moved_task(
             project=project,
             parsed=parsed,
             matched=matched,
-            from_section="In Progress",
+            from_section=from_section,
             to_section="Completed",
             message="Completed task",
             now=now,
+            task_query=task,
         )
 
     def _load_project_state(self, project: str) -> dict[str, str | list[str]]:
@@ -397,6 +408,46 @@ class Vault:
             raise VaultError(f"Ambiguous task match for {query!r}")
         return None
 
+    def _append_unique_task(self, items: Sequence[str], task: str) -> list[str]:
+        updated = list(items)
+        if not any(normalize_task_text(item) == normalize_task_text(task) for item in updated):
+            updated.append(task)
+        return updated
+
+    def _matching_open_queue_item(self, task: str) -> str | None:
+        path = self.agent_queue_path()
+        if not path.exists() or not path.is_file():
+            return None
+        try:
+            return find_matching_task(parse_open_checkboxes(self._read_text(path)), task)
+        except TaskMatchError as exc:
+            if "No matching" in str(exc):
+                return None
+            raise VaultError(str(exc)) from exc
+
+    def _fallback_to_agent_queue(self, task: str, exc: TaskMatchError) -> tuple[str, str]:
+        if "No matching" not in str(exc):
+            raise VaultError(str(exc)) from exc
+        queue_item = self._matching_open_queue_item(task)
+        if queue_item is None:
+            raise VaultError(str(exc)) from exc
+        return queue_item, "Agent Queue"
+
+    def _prepare_queue_check(self, task: str) -> tuple[str, str | None]:
+        """Return ``(queue_path, updated_body_or_none)`` for a unique open match."""
+        path = self.agent_queue_path()
+        if not path.exists() or not path.is_file():
+            return "", None
+        existing = self._read_text(path)
+        try:
+            updated, _matched = move_open_checkbox(existing, task)
+        except TaskMatchError:
+            return "", None
+        rel = self.relative_path(path)
+        if updated == existing:
+            return rel, None
+        return rel, updated
+
     def _rewrite_moved_task(
         self,
         *,
@@ -407,8 +458,15 @@ class Vault:
         to_section: str,
         message: str,
         now: datetime | None,
+        task_query: str,
     ) -> TaskMoveResult:
+        queue_path, queue_body = self._prepare_queue_check(task_query)
         written = self.update_project_state(project=project, now=now, **parsed)
+        queue_updated = False
+        if queue_body is not None:
+            self._atomic_write(self.agent_queue_path(), queue_body)
+            queue_updated = True
+            message = f"{message} and checked Agent Queue item"
         return TaskMoveResult(
             path=written.path,
             created=written.created,
@@ -416,6 +474,8 @@ class Vault:
             task=redact_secrets(matched),
             from_section=from_section,
             to_section=to_section,
+            queue_updated=queue_updated,
+            queue_path=queue_path if queue_updated else "",
         )
 
     def search_memory(

@@ -117,11 +117,35 @@ def test_task_tools_claim_and_complete(tmp_path: Path) -> None:
     claimed = tool_claim_task(vault, "spring-auth", "characterization", now=STAMP)
     assert claimed["from_section"] == "Next Steps"
     assert claimed["to_section"] == "In Progress"
+    assert claimed["queue_updated"] is False
     remaining = tool_list_open_tasks(vault, "spring-auth")
     assert [item["text"] for item in remaining["tasks"]] == ["Write docs"]
     done = tool_complete_task(vault, "spring-auth", "characterization", now=STAMP)
     assert done["to_section"] == "Completed"
     assert tool_list_open_tasks(vault, "spring-auth")["tasks"][0]["text"] == "Write docs"
+
+
+def test_task_tools_claim_checks_agent_queue(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    tool_update_project_state(
+        vault,
+        "spring-auth",
+        next_steps=["Add characterization tests", "Write docs"],
+        now=STAMP,
+    )
+    queue = vault.root / "AI Memory" / "Agent Queue.md"
+    queue.parent.mkdir(parents=True, exist_ok=True)
+    queue.write_text(
+        "# Agent Queue\n\n- [ ] Add characterization tests #agent\n- [ ] Personal chore\n",
+        encoding="utf-8",
+    )
+    claimed = tool_claim_task(vault, "spring-auth", "characterization", now=STAMP)
+    assert claimed["queue_updated"] is True
+    assert claimed["queue_path"] == "AI Memory/Agent Queue.md"
+    assert "- [x] Add characterization tests #agent" in queue.read_text(encoding="utf-8")
+    assert "- [ ] Personal chore" in queue.read_text(encoding="utf-8")
+    remaining = [item["text"] for item in tool_list_open_tasks(vault, "spring-auth")["tasks"]]
+    assert remaining == ["Write docs", "Personal chore"]
 
 
 def test_create_server_registers_expected_tools(tmp_path: Path) -> None:

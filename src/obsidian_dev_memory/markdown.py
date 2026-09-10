@@ -30,6 +30,7 @@ _UNSAFE_SLUG_RE = re.compile(r"[^a-z0-9-]+")
 _REPEAT_DASH_RE = re.compile(r"-{2,}")
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(\S.*)$")
 _BULLET_RE = re.compile(r"^[-*+]\s+(?:\[([ xX])\]\s+)?(.*\S)\s*$")
+_CHECKBOX_LINE_RE = re.compile(r"^([-*+][ \t]+)\[([ xX])\]([ \t]+)(.*\S)[ \t]*$")
 _LEADING_BULLET_RE = re.compile(r"^[-*+]\s+")
 _LEADING_CHECKBOX_RE = re.compile(r"^\[[ xX]\]\s+")
 
@@ -242,16 +243,49 @@ def parse_bullets(text: str) -> list[str]:
 
 def parse_open_checkboxes(text: str) -> list[str]:
     """Extract unchecked ``- [ ]`` checkbox items from an Agent Queue note."""
-    items: list[str] = []
-    for line in text.splitlines():
-        match = _BULLET_RE.match(line)
-        if not match:
+    return [item for _index, _match, item in _iter_open_checkbox_lines(text)]
+
+
+def _iter_open_checkbox_lines(text: str) -> list[tuple[int, re.Match[str], str]]:
+    """Return ``(line_index, match, item_text)`` for unchecked checkbox lines."""
+    rows: list[tuple[int, re.Match[str], str]] = []
+    for index, line in enumerate(text.splitlines()):
+        match = _CHECKBOX_LINE_RE.match(line)
+        if match is None:
             continue
-        mark = match.group(1)
-        item = match.group(2).strip()
-        if mark == " " and item:
-            items.append(item)
-    return items
+        if match.group(2) != " ":
+            continue
+        item = match.group(4).strip()
+        if item:
+            rows.append((index, match, item))
+    return rows
+
+
+def move_open_checkbox(text: str, query: str) -> tuple[str, str]:
+    """Check the unique matching unchecked Agent Queue checkbox.
+
+    Other lines are preserved. The rewritten line is secret-redacted.
+    Returns ``(updated_markdown, matched_item_text)``.
+    """
+    lines = text.splitlines()
+    open_rows = _iter_open_checkbox_lines(text)
+    if not open_rows:
+        raise TaskMatchError(f"No matching task for {query!r}")
+    matched = find_matching_task([item for _index, _match, item in open_rows], query)
+    hits = [
+        row
+        for row in open_rows
+        if normalize_task_text(row[2]) == normalize_task_text(matched)
+    ]
+    if len(hits) != 1:
+        raise TaskMatchError(f"Ambiguous task match for {query!r}")
+    index, match, item = hits[0]
+    prefix, _mark, mid, raw_item = match.groups()
+    lines[index] = f"{prefix}[x]{mid}{redact_secrets(raw_item.strip())}"
+    updated = "\n".join(lines)
+    if text.endswith("\n"):
+        updated += "\n"
+    return updated, redact_secrets(item)
 
 
 def parse_project_state(markdown: str) -> dict[str, str | list[str]]:
@@ -400,6 +434,7 @@ __all__ = [
     "heading_title",
     "join_blocks",
     "local_now",
+    "move_open_checkbox",
     "move_task_bullet",
     "normalize_heading",
     "normalize_task_text",

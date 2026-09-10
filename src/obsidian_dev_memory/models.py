@@ -111,6 +111,8 @@ class TaskMoveResult:
     task: str = ""
     from_section: str = ""
     to_section: str = ""
+    queue_updated: bool = False
+    queue_path: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
