@@ -614,7 +614,10 @@ class Vault:
         *,
         note_statuses: frozenset[str],
     ) -> list[str]:
-        return [item.text for item in self._collect_todo_items(project, note_statuses=note_statuses)]
+        return [
+            item.text
+            for item in self._collect_todo_items(project, note_statuses=note_statuses)
+        ]
 
     def _resolve_task_match(
         self,

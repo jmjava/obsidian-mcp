@@ -318,7 +318,11 @@ Tests use temporary directories, never your real vault.
 
 ```bash
 uv run pytest
+uv run ruff check src/ tests/
 ```
+
+Pull requests run the same `pytest` and `ruff` jobs in `.github/workflows/pytest.yml`.
+A redact, wipe, or claim regression fails CI.
 
 A broader local check:
 
