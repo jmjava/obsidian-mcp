@@ -44,7 +44,7 @@ If a decision file with the same generated name already exists, the server adds 
 
 ## When to update project state
 
-Call `update_project_state` when the overall project state materially changes. Keep `Project State.md` concise. It is not a session log.
+Call `update_project_state` when the overall project state materially changes. Keep `Project State.md` concise. It is not a session log. The tool merges a patch: omitted fields keep existing sections, and unknown H2s survive.
 
 When claiming, blocking, unblocking, or finishing a Next Steps, Agent Queue, or TODO/*.md item, prefer `list_open_tasks`, `list_blocked_tasks`, `claim_task`, `block_task`, `unblock_task`, and `complete_task`. They preserve other Project State sections, may check a matching Agent Queue checkbox or update a matching TODO note (`claim_task` / `complete_task` only), and do not overwrite daily notes.
 

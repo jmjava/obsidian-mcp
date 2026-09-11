@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- `update_project_state` merges a patch instead of rebuilding the note: omitted fields keep existing sections, `blocked=[]` clears Blocked only, and unknown H2 sections survive. `parse_project_state` keeps custom H2s as `extra_sections` so task-tool rewrites do not drop them.
+
 ### Added
 
 - `list_open_tasks` includes top-level `TODO/*.md` notes with frontmatter `status: open` or unchecked items. `claim_task` / `complete_task` can match a unique TODO note without creating `Agent Queue.md`.

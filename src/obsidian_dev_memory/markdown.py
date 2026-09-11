@@ -48,6 +48,28 @@ _LIST_FIELDS = {
     "important files": "important_files",
     "notes": "notes",
 }
+_CANONICAL_TITLES = {
+    "objective": "Objective",
+    "current_state": "Current State",
+    "architecture": "Architecture",
+    "completed": "Completed",
+    "in_progress": "In Progress",
+    "blocked": "Blocked",
+    "next_steps": "Next Steps",
+    "important_files": "Important Files",
+    "notes": "Notes",
+}
+_KNOWN_FIELD_ORDER = (
+    "objective",
+    "current_state",
+    "architecture",
+    "completed",
+    "in_progress",
+    "blocked",
+    "next_steps",
+    "important_files",
+    "notes",
+)
 
 
 class TaskMatchError(ValueError):
@@ -179,6 +201,13 @@ def heading_title(line: str) -> str:
     if not match:
         return line.strip().lower()
     return match.group(2).strip().lower()
+
+
+def _heading_text(line: str) -> str:
+    match = _HEADING_RE.match(line.rstrip())
+    if not match:
+        return line.strip()
+    return match.group(2).strip()
 
 
 def normalize_heading(heading: str) -> str:
@@ -373,9 +402,16 @@ def move_open_checkbox(text: str, query: str) -> tuple[str, str]:
     return updated, redact_secrets(item)
 
 
-def parse_project_state(markdown: str) -> dict[str, str | list[str]]:
-    """Parse Project State.md into update_project_state kwargs."""
-    parsed: dict[str, str | list[str]] = {
+def parse_project_state(
+    markdown: str,
+) -> dict[str, str | list[str] | list[tuple[str, str]]]:
+    """Parse Project State.md into update_project_state kwargs.
+
+    Known H2s map to the public tool fields. Unknown H2s are kept in
+    ``extra_sections`` as ``(title, body)`` pairs so a later rewrite can
+    round-trip them.
+    """
+    parsed: dict[str, str | list[str] | list[tuple[str, str]]] = {
         "objective": "",
         "current_state": "",
         "architecture": [],
@@ -385,16 +421,127 @@ def parse_project_state(markdown: str) -> dict[str, str | list[str]]:
         "next_steps": [],
         "important_files": [],
         "notes": [],
+        "extra_sections": [],
     }
+    extras: list[tuple[str, str]] = []
     for title, body in _iter_level2_sections(markdown):
-        if title in _PROSE_FIELDS:
-            parsed[_PROSE_FIELDS[title]] = body.strip()
-        elif title in _LIST_FIELDS:
-            key = _LIST_FIELDS[title]
-            existing = parsed[key]
-            if isinstance(existing, list):
-                parsed[key] = existing + parse_bullets(body)
+        lookup = title.lower()
+        if lookup in _PROSE_FIELDS:
+            parsed[_PROSE_FIELDS[lookup]] = body.strip()
+        elif lookup in _LIST_FIELDS:
+            key = _LIST_FIELDS[lookup]
+            items = parsed[key]
+            if isinstance(items, list) and all(isinstance(item, str) for item in items):
+                parsed[key] = list(items) + parse_bullets(body)
+        else:
+            extras.append((title, body.strip()))
+    parsed["extra_sections"] = extras
     return parsed
+
+
+def patch_project_state_sections(
+    existing_markdown: str,
+    *,
+    objective: str | None = None,
+    current_state: str | None = None,
+    architecture: Sequence[str] | None = None,
+    completed: Sequence[str] | None = None,
+    in_progress: Sequence[str] | None = None,
+    blocked: Sequence[str] | None = None,
+    next_steps: Sequence[str] | None = None,
+    important_files: Sequence[str] | None = None,
+    notes: Sequence[str] | None = None,
+    extra_sections: Sequence[tuple[str, str]] | None = None,
+) -> list[str]:
+    """Merge a Project State patch into rendered H2 blocks.
+
+    ``None`` keeps the existing section. An empty string or empty list
+    clears that section. Unknown H2s from the note survive; additional
+    ``extra_sections`` are appended when they are not already present.
+    """
+    provided: dict[str, str | Sequence[str]] = {}
+    if objective is not None:
+        provided["objective"] = objective
+    if current_state is not None:
+        provided["current_state"] = current_state
+    if architecture is not None:
+        provided["architecture"] = architecture
+    if completed is not None:
+        provided["completed"] = completed
+    if in_progress is not None:
+        provided["in_progress"] = in_progress
+    if blocked is not None:
+        provided["blocked"] = blocked
+    if next_steps is not None:
+        provided["next_steps"] = next_steps
+    if important_files is not None:
+        provided["important_files"] = important_files
+    if notes is not None:
+        provided["notes"] = notes
+
+    existing_raw: dict[str, tuple[str, str]] = {}
+    extras_after: dict[str | None, list[tuple[str, str]]] = {None: []}
+    seen_known: set[str] = set()
+    seen_unknown: set[str] = set()
+    last_known: str | None = None
+
+    for title, body in _iter_level2_sections(existing_markdown):
+        lookup = title.lower()
+        if lookup in _PROSE_FIELDS:
+            key = _PROSE_FIELDS[lookup]
+            last_known = key
+            if key in seen_known:
+                continue
+            seen_known.add(key)
+            existing_raw[key] = (title, body)
+            continue
+        if lookup in _LIST_FIELDS:
+            key = _LIST_FIELDS[lookup]
+            last_known = key
+            if key in seen_known:
+                continue
+            seen_known.add(key)
+            existing_raw[key] = (title, body)
+            continue
+        if lookup in seen_unknown:
+            continue
+        seen_unknown.add(lookup)
+        extras_after.setdefault(last_known, []).append((title, body))
+
+    blocks: list[str] = []
+
+    def _flush_extras(anchor: str | None) -> None:
+        for extra_title, extra_body in extras_after.get(anchor, []):
+            rendered_extra = section(extra_title, extra_body)
+            if rendered_extra:
+                blocks.append(rendered_extra)
+
+    _flush_extras(None)
+    for key in _KNOWN_FIELD_ORDER:
+        if key in provided:
+            rendered = section(_CANONICAL_TITLES[key], provided[key])
+        elif key in existing_raw:
+            raw_title, raw_body = existing_raw[key]
+            rendered = section(raw_title, raw_body)
+        else:
+            rendered = ""
+        if rendered:
+            blocks.append(rendered)
+        _flush_extras(key)
+
+    if extra_sections:
+        for title, body in extra_sections:
+            lookup = title.lower()
+            if lookup in _PROSE_FIELDS or lookup in _LIST_FIELDS:
+                continue
+            if lookup in seen_unknown:
+                continue
+            seen_unknown.add(lookup)
+            rendered = section(title, body)
+            if rendered:
+                blocks.append(rendered)
+
+    return blocks
 
 
 def _iter_level2_sections(markdown: str) -> list[tuple[str, str]]:
@@ -415,7 +562,7 @@ def _iter_level2_sections(markdown: str) -> list[tuple[str, str]]:
             continue
         if level == 2:
             flush()
-            current_title = heading_title(line)
+            current_title = _heading_text(line)
             continue
         if current_title is not None:
             current_lines.append(line)
@@ -560,6 +707,7 @@ __all__ = [
     "parse_open_checkboxes",
     "parse_open_todo_entries",
     "parse_project_state",
+    "patch_project_state_sections",
     "redact_secrets",
     "section",
     "set_frontmatter_field",

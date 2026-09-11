@@ -120,8 +120,8 @@ def create_server(vault: Vault | None = None) -> Any:
     @mcp.tool()
     def update_project_state(
         project: str,
-        objective: str = "",
-        current_state: str = "",
+        objective: str | None = None,
+        current_state: str | None = None,
         architecture: list[str] | None = None,
         completed: list[str] | None = None,
         in_progress: list[str] | None = None,
@@ -130,9 +130,11 @@ def create_server(vault: Vault | None = None) -> Any:
         important_files: list[str] | None = None,
         notes: list[str] | None = None,
     ) -> dict[str, Any]:
-        """Replace the concise durable Project State.md for a project.
+        """Patch the concise durable Project State.md for a project.
 
-        This is current state, not a session log. Omit empty sections.
+        Omitted fields keep existing sections. An empty list clears that
+        list section. Unknown H2 sections survive. This is current state,
+        not a session log.
         """
         return active_vault.update_project_state(
             project=project,
