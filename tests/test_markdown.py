@@ -20,6 +20,7 @@ from obsidian_dev_memory.markdown import (
     parse_open_checkboxes,
     parse_open_todo_entries,
     parse_project_state,
+    patch_project_state_sections,
     redact_secrets,
     section,
     set_frontmatter_field,
@@ -158,6 +159,40 @@ def test_parse_project_state_next_steps_bullets() -> None:
     ]
     assert parsed["notes"] == ["Keep this"]
     assert parsed["blocked"] == ["Waiting on review"]
+    assert parsed["extra_sections"] == []
+
+
+def test_parse_project_state_keeps_unknown_h2() -> None:
+    markdown = """# Project State
+
+## Objective
+
+Ship consent auto-approval
+
+## Risk Register
+
+Custom leftover must survive
+
+## Blocked
+
+- Waiting on review
+"""
+    parsed = parse_project_state(markdown)
+    assert parsed["objective"] == "Ship consent auto-approval"
+    assert parsed["blocked"] == ["Waiting on review"]
+    assert parsed["next_steps"] == []
+    assert parsed["extra_sections"] == [
+        ("Risk Register", "Custom leftover must survive")
+    ]
+    patched = "\n\n".join(
+        patch_project_state_sections(markdown, blocked=[])
+    )
+    assert "## Objective" in patched
+    assert "Ship consent auto-approval" in patched
+    assert "## Risk Register" in patched
+    assert "Custom leftover must survive" in patched
+    assert "## Blocked" not in patched
+    assert "Waiting on review" not in patched
 
 
 def test_parse_project_state_merges_blocked_and_blockers() -> None:

@@ -31,6 +31,7 @@ from obsidian_dev_memory.markdown import (
     parse_open_checkboxes,
     parse_open_todo_entries,
     parse_project_state,
+    patch_project_state_sections,
     redact_secrets,
     section,
     set_frontmatter_field,
@@ -258,8 +259,8 @@ class Vault:
     def update_project_state(
         self,
         project: str,
-        objective: str = "",
-        current_state: str = "",
+        objective: str | None = None,
+        current_state: str | None = None,
         architecture: Sequence[str] | None = None,
         completed: Sequence[str] | None = None,
         in_progress: Sequence[str] | None = None,
@@ -267,6 +268,7 @@ class Vault:
         next_steps: Sequence[str] | None = None,
         important_files: Sequence[str] | None = None,
         notes: Sequence[str] | None = None,
+        extra_sections: Sequence[tuple[str, str]] | None = None,
         now: datetime | None = None,
     ) -> WriteResult:
         self.ensure_project(project)
@@ -274,6 +276,7 @@ class Vault:
         slug = self.project_slug(project)
         path = self.project_state_path(project)
         created = not path.exists()
+        existing = self._read_text(path) if not created else ""
         body = join_blocks(
             format_frontmatter(
                 {
@@ -283,15 +286,19 @@ class Vault:
                 }
             ),
             "# Project State",
-            section("Objective", objective),
-            section("Current State", current_state),
-            section("Architecture", architecture),
-            section("Completed", completed),
-            section("In Progress", in_progress),
-            section("Blocked", blocked),
-            section("Next Steps", next_steps),
-            section("Important Files", important_files),
-            section("Notes", notes),
+            *patch_project_state_sections(
+                existing,
+                objective=objective,
+                current_state=current_state,
+                architecture=architecture,
+                completed=completed,
+                in_progress=in_progress,
+                blocked=blocked,
+                next_steps=next_steps,
+                important_files=important_files,
+                notes=notes,
+                extra_sections=extra_sections,
+            ),
         )
         self._atomic_write(path, body)
         return WriteResult(
@@ -504,7 +511,9 @@ class Vault:
             sync_agent_queue=False,
         )
 
-    def _load_project_state(self, project: str) -> dict[str, str | list[str]]:
+    def _load_project_state(
+        self, project: str
+    ) -> dict[str, str | list[str] | list[tuple[str, str]]]:
         path = self.project_state_path(project)
         if not path.exists() or not path.is_file():
             return parse_project_state("")
@@ -577,7 +586,7 @@ class Vault:
         self,
         *,
         project: str,
-        parsed: dict[str, str | list[str]],
+        parsed: dict[str, str | list[str] | list[tuple[str, str]]],
         matched: str,
         from_section: str,
         to_section: str,

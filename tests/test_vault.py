@@ -48,6 +48,47 @@ def test_writes_project_state(tmp_path: Path) -> None:
     assert "## Blocked" not in text
 
 
+def test_update_project_state_partial_rewrite_keeps_custom_and_omitted_sections(
+    tmp_path: Path,
+) -> None:
+    vault = make_vault(tmp_path)
+    vault.ensure_project("spring-auth")
+    state = vault.project_state_path("spring-auth")
+    state.write_text(
+        "---\n"
+        "type: project-state\n"
+        "project: spring-auth\n"
+        "updated: 2026-08-22T11:42:00-04:00\n"
+        "---\n\n"
+        "# Project State\n\n"
+        "## Objective\n\n"
+        "Ship consent auto-approval\n\n"
+        "## Current State\n\n"
+        "Design complete\n\n"
+        "## Blocked\n\n"
+        "- Waiting on review\n\n"
+        "## Risk Register\n\n"
+        "Custom leftover must survive\n\n"
+        "## Next Steps\n\n"
+        "- Write docs\n",
+        encoding="utf-8",
+    )
+    vault.update_project_state("spring-auth", blocked=[], now=STAMP.replace(hour=15))
+    text = state.read_text(encoding="utf-8")
+    assert "## Objective" in text
+    assert "Ship consent auto-approval" in text
+    assert "## Current State" in text
+    assert "Design complete" in text
+    assert "## Blocked" not in text
+    assert "Waiting on review" not in text
+    assert "## Risk Register" in text
+    assert "Custom leftover must survive" in text
+    assert "## Next Steps" in text
+    assert "Write docs" in text
+    assert "updated: 2026-08-22T15:42:00-04:00" in text
+    assert "Agent Queue.md" not in text
+
+
 def test_appends_session(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     first = vault.capture_work_session(
