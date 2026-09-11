@@ -94,7 +94,7 @@ def test_heading_append_without_heading_does_not_overwrite() -> None:
     assert updated.endswith("New line\n")
 
 
-def test_append_under_heading_usage_does_not_splice_under_burn_plan_when_later_usage_exists() -> None:
+def test_append_under_heading_usage_does_not_splice_under_burn_plan_when_later_usage_exists() -> None:  # noqa: E501
     existing = (
         "## Usage\n"
         "\n"
