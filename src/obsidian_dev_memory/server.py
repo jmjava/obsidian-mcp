@@ -233,9 +233,12 @@ def create_server(vault: Vault | None = None) -> Any:
         project: str | None = None,
         limit: int = 20,
     ) -> list[dict[str, Any]]:
-        """Search project state, sessions, and decisions with local text matching.
+        """Search project memory, top-level TODO notes, and Daily notes.
 
         Matching uses vault text; titles and excerpts are secret-redacted.
+        Indexes AI Memory/Projects notes plus top-level TODO/*.md and
+        Daily/*.md. Nested TODO/finished/ is not scanned. Does not invent
+        Agent Queue.md.
         """
         return [
             hit.to_dict()

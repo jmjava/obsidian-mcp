@@ -55,6 +55,7 @@ from obsidian_dev_memory.models import (
 DEFAULT_MEMORY_ROOT = "AI Memory"
 DEFAULT_AGENT_QUEUE = "Agent Queue.md"
 DEFAULT_TODO_ROOT = "TODO"
+DEFAULT_DAILY_ROOT = "Daily"
 DEFAULT_CONTEXT_LIMIT = 4000
 DEFAULT_SEARCH_LIMIT = 20
 DEFAULT_EXCERPT_LIMIT = 240
@@ -751,8 +752,16 @@ class Vault:
 
     def _iter_todo_notes(self) -> list[Path]:
         """Return top-level ``TODO/*.md`` notes. Does not create the folder."""
+        return self._iter_top_level_markdown(DEFAULT_TODO_ROOT)
+
+    def _iter_daily_notes(self) -> list[Path]:
+        """Return top-level ``Daily/*.md`` notes. Does not create the folder."""
+        return self._iter_top_level_markdown(DEFAULT_DAILY_ROOT)
+
+    def _iter_top_level_markdown(self, folder: str) -> list[Path]:
+        """Return ``folder/*.md`` notes. Does not create the folder."""
         try:
-            directory = self.safe_path(DEFAULT_TODO_ROOT)
+            directory = self.safe_path(folder)
         except VaultPathError:
             return []
         if not directory.exists() or not directory.is_dir():
@@ -762,7 +771,7 @@ class Vault:
             if not path.is_file() or path.suffix.lower() != ".md":
                 continue
             try:
-                resolved = self.safe_path(DEFAULT_TODO_ROOT, path.name)
+                resolved = self.safe_path(folder, path.name)
             except VaultPathError:
                 continue
             if resolved.is_file() and self._contained(resolved.resolve()):
@@ -856,6 +865,7 @@ class Vault:
         project: str | None = None,
         limit: int = DEFAULT_SEARCH_LIMIT,
     ) -> list[SearchHit]:
+        """Search AI Memory project notes plus top-level TODO and Daily notes."""
         terms = [term.lower() for term in re.findall(r"[A-Za-z0-9_-]+", query)]
         if not terms:
             return []
@@ -906,7 +916,7 @@ class Vault:
         day = date.strip() if date and date.strip() else format_date(stamp)
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
             raise VaultError("date must be YYYY-MM-DD")
-        path = self.safe_path("Daily", f"{day}.md")
+        path = self.safe_path(DEFAULT_DAILY_ROOT, f"{day}.md")
         with self._exclusive_daily_lock(day):
             existing = self._read_text(path) if path.exists() else ""
             created = not path.exists()
@@ -971,17 +981,35 @@ class Vault:
                 self.safe_path(self.memory_root, "Projects", slug, "Decisions"),
             ]
         else:
+            slug = None
             roots = [self.safe_path(self.memory_root, "Projects")]
         files: list[Path] = []
+        seen: set[Path] = set()
+
+        def add(path: Path) -> None:
+            resolved = path.resolve()
+            if resolved in seen:
+                return
+            if path.is_file() and path.suffix.lower() == ".md" and self._contained(resolved):
+                seen.add(resolved)
+                files.append(path)
+
         for root in roots:
             if root.is_file() and root.suffix.lower() == ".md":
-                files.append(root)
+                add(root)
                 continue
             if not root.exists() or not root.is_dir():
                 continue
             for path in root.rglob("*.md"):
-                if path.is_file() and self._contained(path.resolve()):
-                    files.append(path)
+                add(path)
+        for path in self._iter_todo_notes():
+            if slug is not None:
+                fields = parse_frontmatter_fields(self._read_text(path))
+                if not self._todo_belongs_to_project(fields, slug):
+                    continue
+            add(path)
+        for path in self._iter_daily_notes():
+            add(path)
         return files
 
     def _render_session_entry(

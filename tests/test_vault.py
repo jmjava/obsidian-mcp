@@ -1229,3 +1229,44 @@ def test_claim_task_rejects_ambiguous_todo_match(tmp_path: Path) -> None:
     with pytest.raises(VaultError, match="Ambiguous"):
         vault.claim_task("spring-auth", "Add")
     assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
+def test_search_memory_finds_todo_title(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    _write_todo(vault, "2026-09-10-example.md", EXAMPLE_TODO)
+    nested = vault.root / "TODO" / "finished" / "2026-09-10-nested.md"
+    nested.parent.mkdir(parents=True, exist_ok=True)
+    nested.write_text(
+        "---\nstatus: open\nproject: spring-auth\n---\n\n# Nested leftover\n",
+        encoding="utf-8",
+    )
+    _write_todo(
+        vault,
+        "2026-09-10-other-project.md",
+        "---\nstatus: open\nproject: other-app\n---\n\n# Other project work\n",
+    )
+    hits = vault.search_memory("Example leftover", project="spring-auth")
+    assert hits
+    assert hits[0].path == "TODO/2026-09-10-example.md"
+    assert hits[0].title == "Example leftover"
+    assert "Example leftover" in hits[0].matching_excerpt
+    paths = [hit.path for hit in hits]
+    assert "TODO/finished/2026-09-10-nested.md" not in paths
+    assert "TODO/2026-09-10-other-project.md" not in paths
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+    nested_hits = vault.search_memory("Nested leftover", project="spring-auth")
+    assert all("TODO/finished/" not in hit.path for hit in nested_hits)
+
+
+def test_search_memory_finds_daily_note_phrase(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    daily = vault.append_daily_note(
+        "Morning leftover burn review",
+        heading="Work",
+        now=STAMP,
+    )
+    hits = vault.search_memory("leftover burn review")
+    assert hits
+    assert any(hit.path == "Daily/2026-08-22.md" for hit in hits)
+    assert daily.path == "Daily/2026-08-22.md"
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()

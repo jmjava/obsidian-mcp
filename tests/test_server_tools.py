@@ -294,6 +294,30 @@ def test_task_tools_list_and_claim_todo_fixture(tmp_path: Path) -> None:
     assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
 
 
+def test_tool_search_memory_finds_todo_title(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    example = vault.root / "TODO" / "2026-09-10-example.md"
+    example.parent.mkdir()
+    example.write_text(
+        "---\n"
+        "type: todo\n"
+        "id: Q-EXAMPLE\n"
+        "created: 2026-09-10\n"
+        "status: open\n"
+        "project: spring-auth\n"
+        "---\n\n"
+        "# Example leftover\n\n"
+        "- [ ] Wire the TODO scanner\n",
+        encoding="utf-8",
+    )
+    hits = tool_search_memory(vault, "Example leftover", project="spring-auth")
+    assert hits
+    assert hits[0]["path"] == "TODO/2026-09-10-example.md"
+    assert hits[0]["title"] == "Example leftover"
+    assert "Example leftover" in hits[0]["matching_excerpt"]
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
 def test_create_server_registers_expected_tools(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     server = create_server(vault)
