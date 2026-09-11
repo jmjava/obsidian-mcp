@@ -8,7 +8,7 @@ Call `get_project_context` before substantial work when prior project memory is 
 
 Do not call it for trivial edits.
 
-Call `search_memory` before guessing about prior decisions. Use `read_note` only when you already have a vault-relative Markdown path.
+Call `search_memory` before guessing about prior decisions. It searches project memory plus top-level `TODO/*.md` and `Daily/*.md`. Use `read_note` only when you already have a vault-relative Markdown path.
 
 ## When to record sessions
 

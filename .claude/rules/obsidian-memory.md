@@ -43,7 +43,7 @@ When claiming, blocking, unblocking, or finishing a Next Steps, Agent Queue, or 
 
 ## Memory lookup
 
-Call `search_memory` before guessing about prior decisions. Use `read_note` only for a specific vault-relative Markdown path.
+Call `search_memory` before guessing about prior decisions. It searches project memory plus top-level `TODO/*.md` and `Daily/*.md`. Use `read_note` only for a specific vault-relative Markdown path.
 
 ## Daily notes
 
