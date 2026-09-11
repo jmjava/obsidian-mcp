@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- `append_daily_note` / `append_under_heading` require a unique heading title. `heading="Usage"` will not splice under a burn-plan Usage at the top when a later Usage exists. Concurrent daily appends take an exclusive lock outside the vault.
 - `claim_task` / `complete_task` treat substring matches as one canonical task across Project State, Agent Queue, and TODO. A short query such as `docs` cannot complete `Write docs` and check a different queue line; queue sync uses the matched item text, not the raw query. Concurrent claim/complete/block/unblock calls for the same project take an exclusive lock outside the vault.
 - `claim_task` / `complete_task` no longer fail-open on Agent Queue sync: a missing queue is reported as unchecked (the file is never invented), an ambiguous queue match raises before any write, and a unique checkbox is written before Project State so a claim cannot succeed while leaving the box open.
 - `read_note`, `get_project_context`, and `search_memory` redact secret-looking values in returned text. Vault files are not rewritten on read.

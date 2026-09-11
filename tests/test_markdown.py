@@ -7,6 +7,7 @@ import pytest
 
 from obsidian_dev_memory.markdown import (
     SECRET_PLACEHOLDER,
+    HeadingMatchError,
     TaskMatchError,
     append_under_heading,
     bullet_list,
@@ -91,6 +92,40 @@ def test_heading_append_without_heading_does_not_overwrite() -> None:
     updated = append_under_heading(existing, "New line")
     assert "Existing line" in updated
     assert updated.endswith("New line\n")
+
+
+def test_append_under_heading_usage_does_not_splice_under_burn_plan_when_later_usage_exists() -> None:
+    existing = (
+        "## Usage\n"
+        "\n"
+        "7-day leftover burn plan: skip Halo.\n"
+        "\n"
+        "## Work\n"
+        "\n"
+        "other notes\n"
+        "\n"
+        "## Usage\n"
+        "\n"
+        "later usage notes\n"
+    )
+    with pytest.raises(HeadingMatchError, match="Ambiguous heading match for 'Usage'"):
+        append_under_heading(existing, "new usage item", heading="Usage")
+
+
+def test_append_under_heading_unique_usage_still_appends() -> None:
+    existing = (
+        "## Usage\n"
+        "\n"
+        "7-day leftover burn plan: skip Halo.\n"
+        "\n"
+        "## Work\n"
+        "\n"
+        "other notes\n"
+    )
+    updated = append_under_heading(existing, "new usage item", heading="Usage")
+    burn, rest = updated.split("## Work", 1)
+    assert "new usage item" in burn
+    assert "new usage item" not in rest
 
 
 def test_bullet_list_and_secret_redaction() -> None:

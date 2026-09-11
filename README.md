@@ -258,7 +258,7 @@ It fails clearly when the target project or vault is missing, and it merges MCP 
 | `unblock_task` | Move a Blocked or Blockers item back to Next Steps |
 | `search_memory` | Local filename and text search over project memory |
 | `read_note` | Read one vault-relative Markdown file |
-| `append_daily_note` | Append to `Daily/YYYY-MM-DD.md` |
+| `append_daily_note` | Append to `Daily/YYYY-MM-DD.md`; same-title headings must be unique |
 
 `get_project_context` returns empty sections when a project is new instead of failing.
 
@@ -267,6 +267,8 @@ It fails clearly when the target project or vault is missing, and it merges MCP 
 `capture_work_session` accepts an optional `repository_path`. When that path is a Git repository, the note records repository name, branch, short SHA, dirty state, and a short changed-file list. Full diffs are never written. A non-Git path is ignored.
 
 `update_project_state` patches `Project State.md`: omitted fields keep existing sections, an empty list clears that list section, and unknown H2 headings survive. `list_open_tasks` returns Next Steps bullets, unchecked `- [ ]` lines from `AI Memory/Agent Queue.md` when that note exists, and open top-level `TODO/*.md` notes (frontmatter `status: open` and/or unchecked items). It does not create `Agent Queue.md`. `list_blocked_tasks` returns Blocked and Blockers bullets from Project State and does not write vault files. `claim_task` / `complete_task` parse the current Project State, move one matching Next Steps or In Progress bullet (or a unique Agent Queue or TODO item when Project State has no match), and rewrite the note through `update_project_state` so other sections are preserved. A match must be unique across Project State, Agent Queue, and TODO after stripping trailing `#tags` / `[repo::...]`; `docs` is ambiguous when it hits both `Write docs` and a different queue line. When a unique unchecked Agent Queue checkbox is the same canonical task as the matched item, that line is checked in place before Project State is rewritten (the raw query is not reused); other queue lines stay put. A missing Agent Queue is reported as unchecked and is never created. An ambiguous match fails without moving the Project State bullet, so a claim cannot succeed while leaving matching boxes open. A unique matching TODO note is marked `in_progress` or `done`; a unique matching TODO checkbox is checked in place. `block_task` moves one matching Next Steps or In Progress bullet to Blocked through the same rewrite path and does not check Agent Queue boxes or rewrite TODO notes. `unblock_task` moves one matching Blocked or Blockers bullet back to Next Steps the same way and also leaves Agent Queue boxes and TODO notes alone. They do not write daily notes. Match by exact text or a unique substring of one canonical task. Secret-looking values in listed or moved bullets are replaced with `[redacted-secret]`.
+
+`append_daily_note` splices under a heading only when that title is unique in the daily note. `heading="Usage"` will not write under a burn-plan Usage at the top when a later Usage exists. Concurrent appends take an exclusive lock outside the vault so they are not last-write-wins. The lock file is not written into the vault.
 
 ## Vault layout
 
