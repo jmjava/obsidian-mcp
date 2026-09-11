@@ -151,6 +151,74 @@ def test_reads_note(tmp_path: Path) -> None:
     assert "Remember this" in note["content"]
 
 
+def test_read_note_redacts_password_assignment(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    vault.ensure_project("spring-auth")
+    rel = "AI Memory/Projects/spring-auth/Sessions/2026-08-22.md"
+    path = vault.root / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    raw = "# Session\n\nRotate password=fixture-hunter2 before merge\n"
+    path.write_text(raw, encoding="utf-8")
+    note = vault.read_note(rel)
+    assert "fixture-hunter2" not in note["content"]
+    assert SECRET_PLACEHOLDER in note["content"]
+    assert "Rotate" in note["content"]
+    assert path.read_text(encoding="utf-8") == raw
+
+
+def test_search_memory_excerpt_redacts_password_assignment(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    vault.ensure_project("spring-auth")
+    path = (
+        vault.root
+        / "AI Memory"
+        / "Projects"
+        / "spring-auth"
+        / "Sessions"
+        / "2026-08-22.md"
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    raw = "# Session\n\nRotate password=fixture-hunter2 before merge\n"
+    path.write_text(raw, encoding="utf-8")
+    hits = vault.search_memory("Rotate", project="spring-auth")
+    assert hits
+    excerpt = hits[0].matching_excerpt
+    assert "fixture-hunter2" not in excerpt
+    assert SECRET_PLACEHOLDER in excerpt
+    assert "Rotate" in excerpt
+    assert path.read_text(encoding="utf-8") == raw
+
+
+def test_get_project_context_redacts_password_assignment(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    vault.ensure_project("spring-auth")
+    state = vault.project_state_path("spring-auth")
+    raw = (
+        "# Project State\n\n"
+        "## Current State\n\n"
+        "Rotate password=fixture-hunter2 before merge\n"
+    )
+    state.write_text(raw, encoding="utf-8")
+    context = vault.get_project_context("spring-auth")
+    assert "fixture-hunter2" not in context.project_state
+    assert SECRET_PLACEHOLDER in context.project_state
+    assert "Rotate" in context.project_state
+    assert state.read_text(encoding="utf-8") == raw
+
+
+def test_write_redacts_unlabeled_connection_string(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    result = vault.update_project_state(
+        "spring-auth",
+        notes=["DSN postgres://alice:fixture-db-pass@localhost:5432/app"],
+        now=STAMP,
+    )
+    text = (vault.root / result.path).read_text(encoding="utf-8")
+    assert "fixture-db-pass" not in text
+    assert SECRET_PLACEHOLDER in text
+    assert "DSN" in text
+
+
 def test_appends_daily_note(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     first = vault.append_daily_note("Morning review", heading="Work", now=STAMP)

@@ -757,9 +757,9 @@ class Vault:
             hits.append(
                 SearchHit(
                     path=rel,
-                    title=extract_title(text, path.stem),
-                    matching_excerpt=excerpt_around(
-                        text, terms, limit=DEFAULT_EXCERPT_LIMIT
+                    title=redact_secrets(extract_title(text, path.stem)),
+                    matching_excerpt=redact_secrets(
+                        excerpt_around(text, terms, limit=DEFAULT_EXCERPT_LIMIT)
                     ),
                     score=score,
                 )
@@ -771,7 +771,10 @@ class Vault:
         target = self.safe_path(path)
         if not target.exists() or not target.is_file():
             raise VaultPathError(f"Note does not exist: {path}")
-        return {"path": self.relative_path(target), "content": self._read_text(target)}
+        return {
+            "path": self.relative_path(target),
+            "content": redact_secrets(self._read_text(target)),
+        }
 
     def append_daily_note(
         self,
@@ -830,7 +833,7 @@ class Vault:
             documents.append(
                 MemoryDocument(
                     path=self.relative_path(path),
-                    title=extract_title(text, path.stem),
+                    title=redact_secrets(extract_title(text, path.stem)),
                     content=self._compact(text),
                 )
             )
@@ -892,6 +895,7 @@ class Vault:
         ).rstrip()
 
     def _compact(self, text: str) -> str:
+        text = redact_secrets(text)
         if len(text) <= DEFAULT_CONTEXT_LIMIT:
             return text
         return text[: DEFAULT_CONTEXT_LIMIT].rstrip() + "\n..."
