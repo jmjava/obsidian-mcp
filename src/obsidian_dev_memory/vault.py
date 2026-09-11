@@ -15,6 +15,7 @@ from typing import NamedTuple
 
 from obsidian_dev_memory.git_context import collect_git_context
 from obsidian_dev_memory.markdown import (
+    HeadingMatchError,
     TaskMatchError,
     append_under_heading,
     excerpt_around,
@@ -643,6 +644,22 @@ class Vault:
             finally:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
+    @contextmanager
+    def _exclusive_daily_lock(self, day: str) -> Iterator[None]:
+        """Serialize append_daily_note for one calendar day.
+
+        The lock file lives in the process temp dir so the vault is never
+        given an extra note (including Agent Queue.md).
+        """
+        key = hashlib.sha256(f"{self.root}:daily:{day}".encode()).hexdigest()[:16]
+        lock_path = Path(tempfile.gettempdir()) / f"obsidian-mcp-daily-{key}.lock"
+        with lock_path.open("a+", encoding="utf-8") as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
     def _prepare_queue_check(self, task: str, *, required: bool = False) -> _QueueSync:
         """Prepare a unique Agent Queue checkbox check, or fail closed.
 
@@ -890,15 +907,19 @@ class Vault:
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
             raise VaultError("date must be YYYY-MM-DD")
         path = self.safe_path("Daily", f"{day}.md")
-        existing = self._read_text(path) if path.exists() else ""
-        created = not path.exists()
-        updated = append_under_heading(existing, content, heading)
-        self._atomic_write(path, updated)
-        return WriteResult(
-            path=self.relative_path(path),
-            created=created,
-            message="Appended daily note",
-        )
+        with self._exclusive_daily_lock(day):
+            existing = self._read_text(path) if path.exists() else ""
+            created = not path.exists()
+            try:
+                updated = append_under_heading(existing, content, heading)
+            except HeadingMatchError as exc:
+                raise VaultError(str(exc)) from exc
+            self._atomic_write(path, updated)
+            return WriteResult(
+                path=self.relative_path(path),
+                created=created,
+                message="Appended daily note",
+            )
 
     def _unique_decision_path(
         self, project_slug: str, title: str, stamp: datetime

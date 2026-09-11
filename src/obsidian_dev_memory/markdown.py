@@ -83,6 +83,10 @@ class TaskMatchError(ValueError):
     """Raised when a task query matches zero or more than one bullet."""
 
 
+class HeadingMatchError(ValueError):
+    """Raised when a heading title matches more than one section."""
+
+
 def slugify(value: str) -> str:
     """Normalize a logical name into a filesystem-safe ASCII slug."""
     text = unicodedata.normalize("NFKD", value)
@@ -726,7 +730,11 @@ def move_task_bullet(
 
 
 def append_under_heading(existing: str, content: str, heading: str | None = None) -> str:
-    """Append content under a heading, creating the heading when missing."""
+    """Append content under a heading, creating the heading when missing.
+
+    Same-title headings must be unique. ``heading="Usage"`` will not splice
+    under a burn-plan Usage at the top when a later Usage exists.
+    """
     content = redact_secrets(content.rstrip())
     if not content:
         return existing if existing.endswith("\n") or existing == "" else existing + "\n"
@@ -740,12 +748,15 @@ def append_under_heading(existing: str, content: str, heading: str | None = None
     target = heading_title(heading_line)
     level = heading_level(heading_line) or 2
     lines = existing.splitlines()
-
-    for index, line in enumerate(lines):
-        if heading_level(line) is None:
-            continue
-        if heading_title(line) != target:
-            continue
+    matches = [
+        index
+        for index, line in enumerate(lines)
+        if heading_level(line) is not None and heading_title(line) == target
+    ]
+    if len(matches) > 1:
+        raise HeadingMatchError(f"Ambiguous heading match for {heading.strip()!r}")
+    if matches:
+        index = matches[0]
         end = len(lines)
         for cursor in range(index + 1, len(lines)):
             next_level = heading_level(lines[cursor])
@@ -769,6 +780,7 @@ def append_under_heading(existing: str, content: str, heading: str | None = None
 
 __all__ = [
     "SECRET_PLACEHOLDER",
+    "HeadingMatchError",
     "TaskMatchError",
     "append_under_heading",
     "bullet_list",

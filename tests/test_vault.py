@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -228,6 +229,52 @@ def test_appends_daily_note(tmp_path: Path) -> None:
     assert first.path == "Daily/2026-08-22.md"
     assert text.count("Morning review") == 1
     assert "Afternoon review" in text
+
+
+def test_append_daily_note_usage_does_not_splice_under_burn_plan_when_later_usage_exists(
+    tmp_path: Path,
+) -> None:
+    vault = make_vault(tmp_path)
+    path = vault.root / "Daily" / "2026-08-22.md"
+    path.parent.mkdir(parents=True)
+    original = (
+        "## Usage\n"
+        "\n"
+        "7-day leftover burn plan: skip Halo.\n"
+        "\n"
+        "## Work\n"
+        "\n"
+        "other notes\n"
+        "\n"
+        "## Usage\n"
+        "\n"
+        "later usage notes\n"
+    )
+    path.write_text(original, encoding="utf-8")
+    with pytest.raises(VaultError, match="Ambiguous heading match for 'Usage'"):
+        vault.append_daily_note("new usage item", heading="Usage", now=STAMP)
+    assert path.read_text(encoding="utf-8") == original
+
+
+def test_append_daily_note_serializes_concurrent_appends(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    errors: list[BaseException] = []
+
+    def write(index: int) -> None:
+        try:
+            vault.append_daily_note(f"item-{index}", heading="Work", now=STAMP)
+        except BaseException as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=write, args=(index,)) for index in range(20)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert errors == []
+    text = (vault.root / "Daily" / "2026-08-22.md").read_text(encoding="utf-8")
+    for index in range(20):
+        assert f"item-{index}" in text
 
 
 def test_search_finds_known_content(tmp_path: Path) -> None:

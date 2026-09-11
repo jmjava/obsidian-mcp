@@ -259,7 +259,12 @@ def create_server(vault: Vault | None = None) -> Any:
         heading: str | None = None,
         date: str | None = None,
     ) -> dict[str, Any]:
-        """Append an item to Daily/YYYY-MM-DD.md without overwriting existing text."""
+        """Append an item to Daily/YYYY-MM-DD.md without overwriting existing text.
+
+        Same-title headings must be unique: heading="Usage" will not splice
+        under a burn-plan Usage at the top when a later Usage exists.
+        Concurrent appends take an exclusive lock outside the vault.
+        """
         return active_vault.append_daily_note(
             content=content,
             heading=heading,
