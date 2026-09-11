@@ -113,6 +113,7 @@ class TaskMoveResult:
     to_section: str = ""
     queue_updated: bool = False
     queue_path: str = ""
+    queue_status: str = "skipped"
     todo_updated: bool = False
     todo_path: str = ""
 

@@ -181,9 +181,11 @@ def create_server(vault: Vault | None = None) -> Any:
 
         Rewrites Project State.md the same way update_project_state does,
         preserving other sections. When a unique unchecked Agent Queue
-        checkbox matches, that line is checked in place. A unique open
-        TODO/*.md note or unchecked item can be claimed the same way.
-        Never writes daily notes or invents Agent Queue.md.
+        checkbox matches, that line is checked in place before Project
+        State is written. A missing or unmatched queue is reported as
+        unchecked. An ambiguous queue match fails without writing. A
+        unique open TODO/*.md note or unchecked item can be claimed the
+        same way. Never writes daily notes or invents Agent Queue.md.
         """
         return active_vault.claim_task(project=project, task=task).to_dict()
 
@@ -193,9 +195,11 @@ def create_server(vault: Vault | None = None) -> Any:
 
         Rewrites Project State.md the same way update_project_state does,
         preserving other sections. When a unique unchecked Agent Queue
-        checkbox matches, that line is checked in place. A unique open
-        TODO/*.md note or unchecked item can be completed the same way.
-        Never writes daily notes or invents Agent Queue.md.
+        checkbox matches, that line is checked in place before Project
+        State is written. A missing or unmatched queue is reported as
+        unchecked. An ambiguous queue match fails without writing. A
+        unique open TODO/*.md note or unchecked item can be completed the
+        same way. Never writes daily notes or invents Agent Queue.md.
         """
         return active_vault.complete_task(project=project, task=task).to_dict()
 

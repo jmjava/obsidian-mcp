@@ -26,7 +26,7 @@ from obsidian_dev_memory.server import (
     tool_unblock_task,
     tool_update_project_state,
 )
-from obsidian_dev_memory.vault import Vault, VaultPathError
+from obsidian_dev_memory.vault import Vault, VaultError, VaultPathError
 
 STAMP = datetime(2026, 8, 22, 11, 42, tzinfo=ZoneInfo("America/New_York"))
 EXPECTED_TOOLS = {
@@ -150,6 +150,7 @@ def test_task_tools_claim_and_complete(tmp_path: Path) -> None:
     assert claimed["from_section"] == "Next Steps"
     assert claimed["to_section"] == "In Progress"
     assert claimed["queue_updated"] is False
+    assert claimed["queue_status"] == "missing"
     remaining = tool_list_open_tasks(vault, "spring-auth")
     assert [item["text"] for item in remaining["tasks"]] == ["Write docs"]
     done = tool_complete_task(vault, "spring-auth", "characterization", now=STAMP)
@@ -169,6 +170,51 @@ def test_task_tools_claim_and_complete(tmp_path: Path) -> None:
     assert unblocked["queue_updated"] is False
     assert tool_list_blocked_tasks(vault, "spring-auth")["tasks"] == []
     assert tool_list_open_tasks(vault, "spring-auth")["tasks"][0]["text"] == "Write docs"
+
+
+def test_task_tools_claim_reports_unchecked_when_agent_queue_missing(
+    tmp_path: Path,
+) -> None:
+    vault = make_vault(tmp_path)
+    tool_update_project_state(
+        vault,
+        "spring-auth",
+        next_steps=["Add characterization tests", "Write docs"],
+        now=STAMP,
+    )
+    claimed = tool_claim_task(vault, "spring-auth", "characterization", now=STAMP)
+    assert claimed["queue_updated"] is False
+    assert claimed["queue_status"] == "missing"
+    assert "left unchecked" in claimed["message"]
+    state = (vault.root / claimed["path"]).read_text(encoding="utf-8")
+    assert "Add characterization tests" in state.split("## In Progress", 1)[1]
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
+def test_task_tools_claim_rejects_ambiguous_queue(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    tool_update_project_state(
+        vault,
+        "spring-auth",
+        next_steps=["Add characterization tests for Order Status API"],
+        now=STAMP,
+    )
+    queue = vault.root / "AI Memory" / "Agent Queue.md"
+    queue.parent.mkdir(parents=True, exist_ok=True)
+    queue_body = (
+        "# Agent Queue\n\n"
+        "- [ ] Add characterization tests for Order Status API #agent\n"
+        "- [ ] Add characterization tests later #agent\n"
+    )
+    queue.write_text(queue_body, encoding="utf-8")
+    with pytest.raises(VaultError, match="Ambiguous"):
+        tool_claim_task(vault, "spring-auth", "characterization", now=STAMP)
+    state = vault.project_state_path("spring-auth").read_text(encoding="utf-8")
+    assert "Add characterization tests for Order Status API" in state.split(
+        "## Next Steps", 1
+    )[1]
+    assert "## In Progress" not in state
+    assert queue.read_text(encoding="utf-8") == queue_body
 
 
 def test_task_tools_claim_checks_agent_queue(tmp_path: Path) -> None:

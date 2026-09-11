@@ -64,6 +64,12 @@ class _TodoMatch(NamedTuple):
     kind: str
 
 
+class _QueueSync(NamedTuple):
+    path: str
+    body: str | None
+    status: str
+
+
 class VaultError(Exception):
     """Base error for vault operations."""
 
@@ -567,20 +573,40 @@ class Vault:
             raise VaultError(str(exc)) from exc
         return todo_item.text, "TODO"
 
-    def _prepare_queue_check(self, task: str) -> tuple[str, str | None]:
-        """Return ``(queue_path, updated_body_or_none)`` for a unique open match."""
+    def _prepare_queue_check(self, task: str, *, required: bool = False) -> _QueueSync:
+        """Prepare a unique Agent Queue checkbox check, or fail closed.
+
+        Missing ``Agent Queue.md`` is reported, never invented. Ambiguous
+        matches raise so Project State is not written while boxes stay open.
+        """
         path = self.agent_queue_path()
         if not path.exists() or not path.is_file():
-            return "", None
+            if required:
+                raise VaultError("Agent Queue is missing; task left unchecked")
+            return _QueueSync("", None, "missing")
         existing = self._read_text(path)
+        rel = self.relative_path(path)
         try:
             updated, _matched = move_open_checkbox(existing, task)
-        except TaskMatchError:
-            return "", None
-        rel = self.relative_path(path)
+        except TaskMatchError as exc:
+            detail = str(exc)
+            if "Ambiguous" in detail or required:
+                raise VaultError(detail) from exc
+            return _QueueSync(rel, None, "unchecked")
         if updated == existing:
-            return rel, None
-        return rel, updated
+            if required:
+                raise VaultError(f"Agent Queue item left unchecked for {task!r}")
+            return _QueueSync(rel, None, "unchecked")
+        return _QueueSync(rel, updated, "updated")
+
+    def _queue_sync_message(self, message: str, status: str) -> str:
+        if status == "updated":
+            return f"{message} and checked Agent Queue item"
+        if status == "missing":
+            return f"{message}; Agent Queue missing (left unchecked)"
+        if status == "unchecked":
+            return f"{message}; Agent Queue left unchecked"
+        return message
 
     def _rewrite_moved_task(
         self,
@@ -596,9 +622,12 @@ class Vault:
         sync_agent_queue: bool = True,
         todo_status: str | None = None,
     ) -> TaskMoveResult:
-        queue_path, queue_body = ("", None)
+        queue_sync = _QueueSync("", None, "skipped")
         if sync_agent_queue:
-            queue_path, queue_body = self._prepare_queue_check(task_query)
+            queue_sync = self._prepare_queue_check(
+                task_query,
+                required=from_section == "Agent Queue",
+            )
         todo_path, todo_body = ("", None)
         if todo_status:
             todo_path, todo_body = self._prepare_todo_update(
@@ -606,16 +635,18 @@ class Vault:
                 matched,
                 status=todo_status,
             )
+        # Write the queue before Project State so a later state write cannot
+        # report success while a matching box stays open.
+        if queue_sync.body is not None:
+            self._atomic_write(self.agent_queue_path(), queue_sync.body)
         written = self.update_project_state(project=project, now=now, **parsed)
-        queue_updated = False
-        if queue_body is not None:
-            self._atomic_write(self.agent_queue_path(), queue_body)
-            queue_updated = True
-            message = f"{message} and checked Agent Queue item"
         todo_updated = False
         if todo_body is not None:
             self._atomic_write(self.safe_path(todo_path), todo_body)
             todo_updated = True
+        queue_updated = queue_sync.status == "updated"
+        message = self._queue_sync_message(message, queue_sync.status)
+        if todo_updated:
             message = f"{message} and updated TODO note"
         return TaskMoveResult(
             path=written.path,
@@ -625,7 +656,8 @@ class Vault:
             from_section=from_section,
             to_section=to_section,
             queue_updated=queue_updated,
-            queue_path=queue_path if queue_updated else "",
+            queue_path=queue_sync.path if queue_updated else "",
+            queue_status=queue_sync.status,
             todo_updated=todo_updated,
             todo_path=todo_path if todo_updated else "",
         )
