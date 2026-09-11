@@ -191,6 +191,28 @@ def test_task_tools_claim_reports_unchecked_when_agent_queue_missing(
     assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
 
 
+def test_task_tools_docs_does_not_complete_write_docs_or_check_other_queue_line(
+    tmp_path: Path,
+) -> None:
+    vault = make_vault(tmp_path)
+    tool_update_project_state(
+        vault,
+        "spring-auth",
+        in_progress=["Write docs"],
+        now=STAMP,
+    )
+    queue = vault.root / "AI Memory" / "Agent Queue.md"
+    queue.parent.mkdir(parents=True, exist_ok=True)
+    queue_body = "# Agent Queue\n\n- [ ] Fix docs-drift in orch-guide #agent\n"
+    queue.write_text(queue_body, encoding="utf-8")
+    with pytest.raises(VaultError, match="Ambiguous"):
+        tool_complete_task(vault, "spring-auth", "docs", now=STAMP)
+    state = vault.project_state_path("spring-auth").read_text(encoding="utf-8")
+    assert "Write docs" in state.split("## In Progress", 1)[1]
+    assert "## Completed" not in state
+    assert queue.read_text(encoding="utf-8") == queue_body
+
+
 def test_task_tools_claim_rejects_ambiguous_queue(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     tool_update_project_state(

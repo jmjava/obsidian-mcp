@@ -735,6 +735,73 @@ def test_complete_task_rejects_ambiguous_queue_without_writing_state(
     assert queue.read_text(encoding="utf-8") == queue_body
 
 
+def test_complete_task_docs_does_not_complete_write_docs_or_check_other_queue_line(
+    tmp_path: Path,
+) -> None:
+    vault = make_vault(tmp_path)
+    vault.update_project_state(
+        "spring-auth",
+        in_progress=["Write docs"],
+        now=STAMP,
+    )
+    queue_body = (
+        "# Agent Queue\n\n"
+        "- [ ] Fix docs-drift in orch-guide #agent\n"
+        "- [ ] Personal chore\n"
+    )
+    queue = _write_agent_queue(vault, queue_body)
+    with pytest.raises(VaultError, match="Ambiguous"):
+        vault.complete_task("spring-auth", "docs", now=STAMP)
+    state = vault.project_state_path("spring-auth").read_text(encoding="utf-8")
+    assert "Write docs" in state.split("## In Progress", 1)[1]
+    assert "## Completed" not in state
+    assert queue.read_text(encoding="utf-8") == queue_body
+
+
+def test_claim_task_docs_does_not_claim_write_docs_or_check_other_queue_line(
+    tmp_path: Path,
+) -> None:
+    vault = make_vault(tmp_path)
+    vault.update_project_state(
+        "spring-auth",
+        next_steps=["Write docs"],
+        now=STAMP,
+    )
+    queue_body = (
+        "# Agent Queue\n\n- [ ] Fix docs-drift in orch-guide #agent\n"
+    )
+    queue = _write_agent_queue(vault, queue_body)
+    with pytest.raises(VaultError, match="Ambiguous"):
+        vault.claim_task("spring-auth", "docs", now=STAMP)
+    state = vault.project_state_path("spring-auth").read_text(encoding="utf-8")
+    assert "Write docs" in state.split("## Next Steps", 1)[1]
+    assert "## In Progress" not in state
+    assert queue.read_text(encoding="utf-8") == queue_body
+
+
+def test_claim_task_queue_sync_uses_matched_text_not_raw_query(
+    tmp_path: Path,
+) -> None:
+    vault = make_vault(tmp_path)
+    vault.update_project_state(
+        "spring-auth",
+        next_steps=["Add characterization tests for Order Status API"],
+        now=STAMP,
+    )
+    queue = _write_agent_queue(
+        vault,
+        "# Agent Queue\n\n"
+        "- [ ] Add characterization tests for Order Status API #agent\n"
+        "- [ ] Fix docs-drift in orch-guide #agent\n",
+    )
+    claimed = vault.claim_task("spring-auth", "characterization", now=STAMP)
+    assert claimed.queue_updated is True
+    assert claimed.task == "Add characterization tests for Order Status API"
+    queue_text = queue.read_text(encoding="utf-8")
+    assert "- [x] Add characterization tests for Order Status API #agent" in queue_text
+    assert "- [ ] Fix docs-drift in orch-guide #agent" in queue_text
+
+
 def test_claim_task_does_not_write_state_when_queue_write_fails(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     vault.update_project_state(
