@@ -77,7 +77,7 @@ class WriteResult:
 
 @dataclass(frozen=True)
 class OpenTask:
-    """One Next Step, Agent Queue checkbox, or Blocked / Blockers bullet."""
+    """One Next Step, Agent Queue checkbox, TODO note, or Blocked bullet."""
 
     text: str
     source: str
@@ -113,6 +113,8 @@ class TaskMoveResult:
     to_section: str = ""
     queue_updated: bool = False
     queue_path: str = ""
+    todo_updated: bool = False
+    todo_path: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

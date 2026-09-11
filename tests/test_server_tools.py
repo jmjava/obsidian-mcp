@@ -168,6 +168,38 @@ def test_task_tools_claim_checks_agent_queue(tmp_path: Path) -> None:
     assert remaining == ["Write docs", "Personal chore"]
 
 
+def test_task_tools_list_and_claim_todo_fixture(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    example = vault.root / "TODO" / "2026-09-10-example.md"
+    example.parent.mkdir()
+    example.write_text(
+        "---\n"
+        "type: todo\n"
+        "id: Q-EXAMPLE\n"
+        "created: 2026-09-10\n"
+        "status: open\n"
+        "project: spring-auth\n"
+        "---\n\n"
+        "# Example leftover\n\n"
+        "- [ ] Wire the TODO scanner\n",
+        encoding="utf-8",
+    )
+    listed = tool_list_open_tasks(vault, "spring-auth")
+    assert [(item["text"], item["source"], item["path"]) for item in listed["tasks"]] == [
+        ("Example leftover", "todo", "TODO/2026-09-10-example.md"),
+        ("Wire the TODO scanner", "todo_item", "TODO/2026-09-10-example.md"),
+    ]
+    claimed = tool_claim_task(vault, "spring-auth", "Example leftover", now=STAMP)
+    assert claimed["from_section"] == "TODO"
+    assert claimed["to_section"] == "In Progress"
+    assert claimed["todo_updated"] is True
+    assert claimed["queue_updated"] is False
+    remaining = [item["text"] for item in tool_list_open_tasks(vault, "spring-auth")["tasks"]]
+    assert remaining == ["Wire the TODO scanner"]
+    assert "status: in_progress" in example.read_text(encoding="utf-8")
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
 def test_create_server_registers_expected_tools(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     server = create_server(vault)

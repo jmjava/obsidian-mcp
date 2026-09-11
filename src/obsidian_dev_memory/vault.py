@@ -8,6 +8,7 @@ import tempfile
 from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
+from typing import NamedTuple
 
 from obsidian_dev_memory.git_context import collect_git_context
 from obsidian_dev_memory.markdown import (
@@ -26,10 +27,13 @@ from obsidian_dev_memory.markdown import (
     move_open_checkbox,
     move_task_bullet,
     normalize_task_text,
+    parse_frontmatter_fields,
     parse_open_checkboxes,
+    parse_open_todo_entries,
     parse_project_state,
     redact_secrets,
     section,
+    set_frontmatter_field,
     slugify,
 )
 from obsidian_dev_memory.models import (
@@ -45,9 +49,18 @@ from obsidian_dev_memory.models import (
 
 DEFAULT_MEMORY_ROOT = "AI Memory"
 DEFAULT_AGENT_QUEUE = "Agent Queue.md"
+DEFAULT_TODO_ROOT = "TODO"
 DEFAULT_CONTEXT_LIMIT = 4000
 DEFAULT_SEARCH_LIMIT = 20
 DEFAULT_EXCERPT_LIMIT = 240
+_TODO_CLAIM_NOTE_STATUSES = frozenset({"open"})
+_TODO_COMPLETE_NOTE_STATUSES = frozenset({"open", "in_progress", "claimed"})
+
+
+class _TodoMatch(NamedTuple):
+    text: str
+    path: Path
+    kind: str
 
 
 class VaultError(Exception):
@@ -323,6 +336,15 @@ class Vault:
                     seen.add(key)
                     tasks.append(OpenTask(text=text, source="agent_queue", path=rel))
 
+        for match in self._collect_todo_items(slug, note_statuses=_TODO_CLAIM_NOTE_STATUSES):
+            text = redact_secrets(match.text)
+            key = normalize_task_text(text)
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            source = "todo" if match.kind == "note" else "todo_item"
+            tasks.append(OpenTask(text=text, source=source, path=self.relative_path(match.path)))
+
         return OpenTaskList(project=slug, tasks=tasks)
 
     def list_blocked_tasks(self, project: str) -> OpenTaskList:
@@ -364,7 +386,7 @@ class Vault:
                 task,
             )
         except TaskMatchError as exc:
-            matched, from_section = self._fallback_to_agent_queue(task, exc)
+            matched, from_section = self._fallback_to_external_source(project, task, exc)
             in_progress = self._append_unique_task(in_progress, matched)
         parsed["next_steps"] = next_steps
         parsed["in_progress"] = in_progress
@@ -377,6 +399,7 @@ class Vault:
             message="Claimed task",
             now=now,
             task_query=task,
+            todo_status="in_progress",
         )
 
     def complete_task(
@@ -396,7 +419,7 @@ class Vault:
                 task,
             )
         except TaskMatchError as exc:
-            matched, from_section = self._fallback_to_agent_queue(task, exc)
+            matched, from_section = self._fallback_to_external_source(project, task, exc)
             completed = self._append_unique_task(completed, matched)
         parsed["in_progress"] = in_progress
         parsed["completed"] = completed
@@ -409,6 +432,7 @@ class Vault:
             message="Completed task",
             now=now,
             task_query=task,
+            todo_status="done",
         )
 
     def block_task(
@@ -514,13 +538,25 @@ class Vault:
                 return None
             raise VaultError(str(exc)) from exc
 
-    def _fallback_to_agent_queue(self, task: str, exc: TaskMatchError) -> tuple[str, str]:
+    def _fallback_to_external_source(
+        self,
+        project: str,
+        task: str,
+        exc: TaskMatchError,
+    ) -> tuple[str, str]:
         if "No matching" not in str(exc):
             raise VaultError(str(exc)) from exc
         queue_item = self._matching_open_queue_item(task)
-        if queue_item is None:
+        if queue_item is not None:
+            return queue_item, "Agent Queue"
+        todo_item = self._find_todo_match(
+            project,
+            task,
+            note_statuses=_TODO_CLAIM_NOTE_STATUSES,
+        )
+        if todo_item is None:
             raise VaultError(str(exc)) from exc
-        return queue_item, "Agent Queue"
+        return todo_item.text, "TODO"
 
     def _prepare_queue_check(self, task: str) -> tuple[str, str | None]:
         """Return ``(queue_path, updated_body_or_none)`` for a unique open match."""
@@ -549,16 +585,29 @@ class Vault:
         now: datetime | None,
         task_query: str,
         sync_agent_queue: bool = True,
+        todo_status: str | None = None,
     ) -> TaskMoveResult:
         queue_path, queue_body = ("", None)
         if sync_agent_queue:
             queue_path, queue_body = self._prepare_queue_check(task_query)
+        todo_path, todo_body = ("", None)
+        if todo_status:
+            todo_path, todo_body = self._prepare_todo_update(
+                project,
+                matched,
+                status=todo_status,
+            )
         written = self.update_project_state(project=project, now=now, **parsed)
         queue_updated = False
         if queue_body is not None:
             self._atomic_write(self.agent_queue_path(), queue_body)
             queue_updated = True
             message = f"{message} and checked Agent Queue item"
+        todo_updated = False
+        if todo_body is not None:
+            self._atomic_write(self.safe_path(todo_path), todo_body)
+            todo_updated = True
+            message = f"{message} and updated TODO note"
         return TaskMoveResult(
             path=written.path,
             created=written.created,
@@ -568,7 +617,110 @@ class Vault:
             to_section=to_section,
             queue_updated=queue_updated,
             queue_path=queue_path if queue_updated else "",
+            todo_updated=todo_updated,
+            todo_path=todo_path if todo_updated else "",
         )
+
+    def _iter_todo_notes(self) -> list[Path]:
+        """Return top-level ``TODO/*.md`` notes. Does not create the folder."""
+        try:
+            directory = self.safe_path(DEFAULT_TODO_ROOT)
+        except VaultPathError:
+            return []
+        if not directory.exists() or not directory.is_dir():
+            return []
+        files: list[Path] = []
+        for path in sorted(directory.iterdir(), key=lambda item: item.name):
+            if not path.is_file() or path.suffix.lower() != ".md":
+                continue
+            try:
+                resolved = self.safe_path(DEFAULT_TODO_ROOT, path.name)
+            except VaultPathError:
+                continue
+            if resolved.is_file() and self._contained(resolved.resolve()):
+                files.append(resolved)
+        return files
+
+    def _todo_belongs_to_project(self, fields: dict[str, str], project_slug: str) -> bool:
+        raw = fields.get("project", "").strip()
+        if not raw:
+            return True
+        try:
+            return slugify(raw) == project_slug
+        except ValueError:
+            return False
+
+    def _collect_todo_items(
+        self,
+        project: str,
+        *,
+        note_statuses: frozenset[str],
+    ) -> list[_TodoMatch]:
+        slug = self.project_slug(project)
+        items: list[_TodoMatch] = []
+        for path in self._iter_todo_notes():
+            text = self._read_text(path)
+            fields = parse_frontmatter_fields(text)
+            if not self._todo_belongs_to_project(fields, slug):
+                continue
+            for entry_text, kind in parse_open_todo_entries(
+                text,
+                path.stem,
+                note_statuses=note_statuses,
+            ):
+                items.append(_TodoMatch(text=entry_text, path=path, kind=kind))
+        return items
+
+    def _find_todo_match(
+        self,
+        project: str,
+        task: str,
+        *,
+        note_statuses: frozenset[str],
+    ) -> _TodoMatch | None:
+        items = self._collect_todo_items(project, note_statuses=note_statuses)
+        if not items:
+            return None
+        try:
+            matched = find_matching_task([item.text for item in items], task)
+        except TaskMatchError as exc:
+            if "No matching" in str(exc):
+                return None
+            raise VaultError(str(exc)) from exc
+        hits = [
+            item
+            for item in items
+            if normalize_task_text(item.text) == normalize_task_text(matched)
+        ]
+        if len(hits) != 1:
+            raise VaultError(f"Ambiguous task match for {task!r}")
+        return hits[0]
+
+    def _prepare_todo_update(
+        self,
+        project: str,
+        task: str,
+        *,
+        status: str,
+    ) -> tuple[str, str | None]:
+        """Return ``(todo_path, updated_body_or_none)`` for a unique open match."""
+        note_statuses = (
+            _TODO_COMPLETE_NOTE_STATUSES if status == "done" else _TODO_CLAIM_NOTE_STATUSES
+        )
+        match = self._find_todo_match(project, task, note_statuses=note_statuses)
+        if match is None:
+            return "", None
+        existing = self._read_text(match.path)
+        if match.kind == "checkbox":
+            try:
+                updated, _matched = move_open_checkbox(existing, match.text)
+            except TaskMatchError:
+                return "", None
+        else:
+            updated = set_frontmatter_field(existing, "status", status)
+        if updated == existing:
+            return "", None
+        return self.relative_path(match.path), updated
 
     def search_memory(
         self,

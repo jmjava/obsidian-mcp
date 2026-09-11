@@ -250,10 +250,10 @@ It fails clearly when the target project or vault is missing, and it merges MCP 
 | `capture_work_session` | Append a timestamped section to today's session note |
 | `record_decision` | Write a durable decision note |
 | `update_project_state` | Replace the concise project-state note |
-| `list_open_tasks` | Scan Project State Next Steps plus optional `Agent Queue.md` checkboxes |
+| `list_open_tasks` | Scan Project State Next Steps, optional `Agent Queue.md` checkboxes, and open `TODO/*.md` notes |
 | `list_blocked_tasks` | Scan Project State Blocked / Blockers bullets |
-| `claim_task` | Move a Next Steps or Agent Queue item to In Progress; check a matching queue box |
-| `complete_task` | Move an In Progress or Agent Queue item to Completed; check a matching queue box |
+| `claim_task` | Move a Next Steps, Agent Queue, or TODO item to In Progress; check a matching queue box |
+| `complete_task` | Move an In Progress, Agent Queue, or TODO item to Completed; check a matching queue box |
 | `block_task` | Move a Next Steps or In Progress item to Blocked |
 | `unblock_task` | Move a Blocked or Blockers item back to Next Steps |
 | `search_memory` | Local filename and text search over project memory |
@@ -266,7 +266,7 @@ It fails clearly when the target project or vault is missing, and it merges MCP 
 
 `capture_work_session` accepts an optional `repository_path`. When that path is a Git repository, the note records repository name, branch, short SHA, dirty state, and a short changed-file list. Full diffs are never written. A non-Git path is ignored.
 
-`list_open_tasks` returns Next Steps bullets and, when `AI Memory/Agent Queue.md` exists, unchecked `- [ ]` lines. `list_blocked_tasks` returns Blocked and Blockers bullets from Project State and does not write vault files. `claim_task` / `complete_task` parse the current Project State, move one matching Next Steps or In Progress bullet (or a unique Agent Queue item when Project State has no match), and rewrite the note through `update_project_state` so other sections are preserved. When a unique unchecked Agent Queue checkbox matches, that line is checked in place; other queue lines stay put. `block_task` moves one matching Next Steps or In Progress bullet to Blocked through the same rewrite path and does not check Agent Queue boxes. `unblock_task` moves one matching Blocked or Blockers bullet back to Next Steps the same way and also leaves Agent Queue boxes alone. They do not write daily notes. Match by exact text or a unique substring. Secret-looking values in listed or moved bullets are replaced with `[redacted-secret]`.
+`list_open_tasks` returns Next Steps bullets, unchecked `- [ ]` lines from `AI Memory/Agent Queue.md` when that note exists, and open top-level `TODO/*.md` notes (frontmatter `status: open` and/or unchecked items). It does not create `Agent Queue.md`. `list_blocked_tasks` returns Blocked and Blockers bullets from Project State and does not write vault files. `claim_task` / `complete_task` parse the current Project State, move one matching Next Steps or In Progress bullet (or a unique Agent Queue or TODO item when Project State has no match), and rewrite the note through `update_project_state` so other sections are preserved. When a unique unchecked Agent Queue checkbox matches, that line is checked in place; other queue lines stay put. A unique matching TODO note is marked `in_progress` or `done`; a unique matching TODO checkbox is checked in place. `block_task` moves one matching Next Steps or In Progress bullet to Blocked through the same rewrite path and does not check Agent Queue boxes or rewrite TODO notes. `unblock_task` moves one matching Blocked or Blockers bullet back to Next Steps the same way and also leaves Agent Queue boxes and TODO notes alone. They do not write daily notes. Match by exact text or a unique substring. Secret-looking values in listed or moved bullets are replaced with `[redacted-secret]`.
 
 ## Vault layout
 
@@ -283,6 +283,9 @@ AI Memory/
 
 Daily/
 └── YYYY-MM-DD.md
+
+TODO/
+└── YYYY-MM-DD-<slug>.md   # real backlog; list/claim/complete scan top-level notes
 ```
 
 The `AI Memory` folder honors `OBSIDIAN_MEMORY_ROOT`. Logical project names are slugified (`Spring Authorization Server` → `spring-authorization-server`).
