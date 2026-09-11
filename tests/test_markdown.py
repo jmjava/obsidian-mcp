@@ -101,6 +101,27 @@ def test_bullet_list_and_secret_redaction() -> None:
     )
 
 
+def test_redact_secrets_password_assignment() -> None:
+    redacted = redact_secrets("Rotate password=fixture-hunter2 before merge")
+    assert "fixture-hunter2" not in redacted
+    assert SECRET_PLACEHOLDER in redacted
+    assert "Rotate" in redacted
+
+
+def test_redact_secrets_unlabeled_connection_string() -> None:
+    uri = "postgres://alice:fixture-db-pass@localhost:5432/app"
+    redacted = redact_secrets(f"DSN {uri} for local tests")
+    assert "fixture-db-pass" not in redacted
+    assert "alice:fixture-db-pass" not in redacted
+    assert SECRET_PLACEHOLDER in redacted
+    assert "DSN" in redacted
+    redis = redact_secrets("Cache redis://:fixture-db-pass@localhost:6379/0")
+    assert "fixture-db-pass" not in redis
+    assert SECRET_PLACEHOLDER in redis
+    plain = redact_secrets("See https://example.com/docs and https://github.com/jmjava/obsidian-mcp")
+    assert plain == "See https://example.com/docs and https://github.com/jmjava/obsidian-mcp"
+
+
 SAMPLE_PROJECT_STATE = """---
 type: project-state
 project: spring-auth

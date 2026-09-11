@@ -56,7 +56,7 @@ def create_server(vault: Vault | None = None) -> Any:
 
         Reads Project State.md plus the newest session and decision notes.
         Returns empty sections when the project is new. Never returns the
-        entire vault.
+        entire vault. Secret-looking values are redacted in the response.
         """
         return active_vault.get_project_context(
             project,
@@ -225,7 +225,10 @@ def create_server(vault: Vault | None = None) -> Any:
         project: str | None = None,
         limit: int = 20,
     ) -> list[dict[str, Any]]:
-        """Search project state, sessions, and decisions with local text matching."""
+        """Search project state, sessions, and decisions with local text matching.
+
+        Matching uses vault text; titles and excerpts are secret-redacted.
+        """
         return [
             hit.to_dict()
             for hit in active_vault.search_memory(query, project=project, limit=limit)
@@ -236,7 +239,9 @@ def create_server(vault: Vault | None = None) -> Any:
         """Read one Markdown note inside the configured Obsidian vault.
 
         The path must stay inside OBSIDIAN_VAULT_PATH. Absolute paths and
-        traversal such as ../ are rejected.
+        traversal such as ../ are rejected. Secret-looking values in the
+        returned content are replaced with a placeholder; the file is not
+        rewritten.
         """
         return active_vault.read_note(path)
 

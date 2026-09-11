@@ -100,6 +100,32 @@ def test_tool_flow_writes_readable_markdown(tmp_path: Path) -> None:
     assert daily["path"] == "Daily/2026-08-22.md"
 
 
+def test_read_note_and_search_redact_password_assignment(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    vault.ensure_project("spring-auth")
+    rel = "AI Memory/Projects/spring-auth/Sessions/2026-08-22.md"
+    path = vault.root / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "# Session\n\nRotate password=fixture-hunter2 before merge\n",
+        encoding="utf-8",
+    )
+    note = tool_read_note(vault, rel)
+    assert "fixture-hunter2" not in note["content"]
+    assert "[redacted-secret]" in note["content"]
+    hits = tool_search_memory(vault, "Rotate", project="spring-auth")
+    assert hits
+    assert "fixture-hunter2" not in hits[0]["matching_excerpt"]
+    assert "[redacted-secret]" in hits[0]["matching_excerpt"]
+    state = vault.project_state_path("spring-auth")
+    state.write_text(
+        "# Project State\n\n## Notes\n\n- password=fixture-hunter2\n",
+        encoding="utf-8",
+    )
+    context = tool_get_project_context(vault, "spring-auth")
+    assert "fixture-hunter2" not in context["project_state"]
+
+
 def test_read_note_tool_rejects_escape(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     with pytest.raises(VaultPathError):

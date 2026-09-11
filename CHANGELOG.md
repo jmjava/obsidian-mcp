@@ -6,6 +6,8 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- `read_note`, `get_project_context`, and `search_memory` redact secret-looking values in returned text. Vault files are not rewritten on read.
+- `redact_secrets` now matches unlabeled `scheme://user:pass@host` connection strings (and `pwd=` / `passwd=` assignments) on write and read.
 - `update_project_state` merges a patch instead of rebuilding the note: omitted fields keep existing sections, `blocked=[]` clears Blocked only, and unknown H2 sections survive. `parse_project_state` keeps custom H2s as `extra_sections` so task-tool rewrites do not drop them.
 
 ### Added

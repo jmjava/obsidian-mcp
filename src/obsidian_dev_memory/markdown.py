@@ -20,10 +20,16 @@ _SECRET_PATTERNS = (
     ),
     re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
     re.compile(
-        r"(?i)\b(?:password|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|"
-        r"private[_-]?key|db[_-]?password|authorization)\s*[:=]\s*\S+"
+        r"(?i)\b(?:password|passwd|pwd|secret|api[_-]?key|access[_-]?token|"
+        r"refresh[_-]?token|private[_-]?key|db[_-]?password|authorization)"
+        r"\s*[:=]\s*\S+"
     ),
     re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._\-+=/]{16,}"),
+    # Unlabeled URI userinfo: postgres://user:pass@host, redis://:pass@host
+    re.compile(
+        r"(?i)\b(?:jdbc:)?[a-z][a-z0-9+.-]*://"
+        r"[^\s/@:]*:[^\s/@]+@[^\s)\]>'`,;]+"
+    ),
 )
 
 _UNSAFE_SLUG_RE = re.compile(r"[^a-z0-9-]+")

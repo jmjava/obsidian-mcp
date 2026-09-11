@@ -305,7 +305,7 @@ The `AI Memory` folder honors `OBSIDIAN_MEMORY_ROOT`. Logical project names are 
 - Absolute note paths, `../` traversal, and detectable symlink escapes are rejected.
 - Writes are atomic (`tempfile` + `os.replace`) where practical.
 - The tools are not a general filesystem API.
-- Secret-looking values (keys, tokens, JWTs, private keys, `password=` assignments) are replaced with `[redacted-secret]` before they are written.
+- Secret-looking values (keys, tokens, JWTs, private keys, `password=` assignments, and unlabeled `scheme://user:pass@host` connection strings) are replaced with `[redacted-secret]` before they are written and before `read_note`, `get_project_context`, and `search_memory` return text. Reads do not rewrite vault files.
 - Cursor rules, Copilot instructions, and Claude Code rules tell the assistant never to persist passwords, API keys, tokens, JWTs, private keys, `.env` contents, database credentials, production secrets, or sensitive customer data.
 
 ## Testing
