@@ -10,6 +10,7 @@ from obsidian_dev_memory.markdown import (
     TaskMatchError,
     append_under_heading,
     bullet_list,
+    canonical_task_text,
     find_matching_task,
     find_task_across_sources,
     format_frontmatter,
@@ -22,6 +23,7 @@ from obsidian_dev_memory.markdown import (
     parse_project_state,
     patch_project_state_sections,
     redact_secrets,
+    resolve_unique_task,
     section,
     set_frontmatter_field,
     slugify,
@@ -365,6 +367,45 @@ def test_find_task_across_sources_missing_and_ambiguous() -> None:
         find_task_across_sources(sources, "   ")
 
 
+def test_canonical_task_text_strips_queue_tags() -> None:
+    assert canonical_task_text(
+        "Add characterization tests for Order Status API #agent [repo::jmjava/dogfood-api]"
+    ) == canonical_task_text("Add characterization tests for Order Status API")
+
+
+def test_resolve_unique_task_docs_is_ambiguous_across_write_docs_and_queue() -> None:
+    sources = (
+        ("In Progress", ["Write docs"]),
+        ("Agent Queue", ["Fix docs-drift in orch-guide #agent"]),
+    )
+    with pytest.raises(TaskMatchError, match="Ambiguous"):
+        resolve_unique_task(sources, "docs", prefer=("In Progress", "Agent Queue"))
+    matched, source = resolve_unique_task(
+        sources,
+        "Write docs",
+        prefer=("In Progress", "Agent Queue"),
+    )
+    assert matched == "Write docs"
+    assert source == "In Progress"
+
+
+def test_resolve_unique_task_keeps_tag_variants_as_one_task() -> None:
+    sources = (
+        ("Next Steps", ["Add characterization tests for Order Status API"]),
+        (
+            "Agent Queue",
+            ["Add characterization tests for Order Status API #agent"],
+        ),
+    )
+    matched, source = resolve_unique_task(
+        sources,
+        "characterization",
+        prefer=("Next Steps", "Agent Queue"),
+    )
+    assert matched == "Add characterization tests for Order Status API"
+    assert source == "Next Steps"
+
+
 SAMPLE_AGENT_QUEUE = """# Agent Queue
 
 ## Inbox
@@ -428,6 +469,20 @@ def test_move_open_checkbox_missing_and_ambiguous() -> None:
         move_open_checkbox("- [ ] Add tests\n- [ ] Add tests later\n", "Add")
     with pytest.raises(TaskMatchError, match="No matching"):
         move_open_checkbox("# Agent Queue\n\n- [x] Already done\n", "Already")
+
+
+def test_move_open_checkbox_canonical_does_not_check_other_docs_line() -> None:
+    text = (
+        "# Agent Queue\n\n"
+        "- [ ] Write docs #agent\n"
+        "- [ ] Fix docs-drift in orch-guide #agent\n"
+    )
+    updated, matched = move_open_checkbox(text, "Write docs", canonical=True)
+    assert matched == "Write docs #agent"
+    assert "- [x] Write docs #agent" in updated
+    assert "- [ ] Fix docs-drift in orch-guide #agent" in updated
+    with pytest.raises(TaskMatchError, match="No matching"):
+        move_open_checkbox(text, "docs", canonical=True)
 
 
 def test_heading_time_uses_timezone_name() -> None:

@@ -180,12 +180,15 @@ def create_server(vault: Vault | None = None) -> Any:
         """Move a Next Steps, Agent Queue, or TODO item to In Progress.
 
         Rewrites Project State.md the same way update_project_state does,
-        preserving other sections. When a unique unchecked Agent Queue
-        checkbox matches, that line is checked in place before Project
-        State is written. A missing or unmatched queue is reported as
-        unchecked. An ambiguous queue match fails without writing. A
-        unique open TODO/*.md note or unchecked item can be claimed the
-        same way. Never writes daily notes or invents Agent Queue.md.
+        preserving other sections. Matching is unique across Project
+        State, Agent Queue, and TODO: a short query such as docs cannot
+        claim Write docs when another source has a different docs line.
+        Queue sync uses the matched item text (not the raw query) and
+        checks only the same canonical task. A missing or unmatched
+        queue is reported as unchecked. An ambiguous match fails without
+        writing. A unique open TODO/*.md note or unchecked item can be
+        claimed the same way. Never writes daily notes or invents
+        Agent Queue.md.
         """
         return active_vault.claim_task(project=project, task=task).to_dict()
 
@@ -194,12 +197,13 @@ def create_server(vault: Vault | None = None) -> Any:
         """Move an In Progress, Agent Queue, or TODO item to Completed.
 
         Rewrites Project State.md the same way update_project_state does,
-        preserving other sections. When a unique unchecked Agent Queue
-        checkbox matches, that line is checked in place before Project
-        State is written. A missing or unmatched queue is reported as
-        unchecked. An ambiguous queue match fails without writing. A
-        unique open TODO/*.md note or unchecked item can be completed the
-        same way. Never writes daily notes or invents Agent Queue.md.
+        preserving other sections. Matching is unique across Project
+        State, Agent Queue, and TODO. Queue sync uses the matched item
+        text, so docs cannot complete Write docs and check a different
+        queue line. A missing or unmatched queue is reported as
+        unchecked. An ambiguous match fails without writing. A unique
+        open TODO/*.md note or unchecked item can be completed the same
+        way. Never writes daily notes or invents Agent Queue.md.
         """
         return active_vault.complete_task(project=project, task=task).to_dict()
 

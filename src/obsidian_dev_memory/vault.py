@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import fcntl
+import hashlib
 import os
 import re
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import NamedTuple
@@ -17,7 +20,6 @@ from obsidian_dev_memory.markdown import (
     excerpt_around,
     extract_title,
     find_matching_task,
-    find_task_across_sources,
     format_date,
     format_frontmatter,
     format_heading_time,
@@ -33,6 +35,7 @@ from obsidian_dev_memory.markdown import (
     parse_project_state,
     patch_project_state_sections,
     redact_secrets,
+    resolve_unique_task,
     section,
     set_frontmatter_field,
     slugify,
@@ -385,35 +388,46 @@ class Vault:
         task: str,
         now: datetime | None = None,
     ) -> TaskMoveResult:
-        parsed = self._load_project_state(project)
-        in_progress = [str(item) for item in parsed["in_progress"]]
-        already = self._exact_task_match(in_progress, task)
-        if already is not None:
-            raise VaultError(f"Task already in progress: {already}")
-        next_steps = [str(item) for item in parsed["next_steps"]]
-        from_section = "Next Steps"
-        try:
-            next_steps, in_progress, matched = move_task_bullet(
-                next_steps,
-                in_progress,
+        with self._exclusive_task_lock(project):
+            parsed = self._load_project_state(project)
+            in_progress = [str(item) for item in parsed["in_progress"]]
+            next_steps = [str(item) for item in parsed["next_steps"]]
+            matched, from_section = self._resolve_task_match(
                 task,
+                (
+                    ("In Progress", in_progress),
+                    ("Next Steps", next_steps),
+                    ("Agent Queue", self._open_queue_items()),
+                    (
+                        "TODO",
+                        self._todo_texts(project, note_statuses=_TODO_CLAIM_NOTE_STATUSES),
+                    ),
+                ),
+                prefer=("In Progress", "Next Steps", "Agent Queue", "TODO"),
             )
-        except TaskMatchError as exc:
-            matched, from_section = self._fallback_to_external_source(project, task, exc)
-            in_progress = self._append_unique_task(in_progress, matched)
-        parsed["next_steps"] = next_steps
-        parsed["in_progress"] = in_progress
-        return self._rewrite_moved_task(
-            project=project,
-            parsed=parsed,
-            matched=matched,
-            from_section=from_section,
-            to_section="In Progress",
-            message="Claimed task",
-            now=now,
-            task_query=task,
-            todo_status="in_progress",
-        )
+            if from_section == "In Progress":
+                raise VaultError(f"Task already in progress: {matched}")
+            if from_section == "Next Steps":
+                next_steps, in_progress, matched = move_task_bullet(
+                    next_steps,
+                    in_progress,
+                    matched,
+                )
+            else:
+                in_progress = self._append_unique_task(in_progress, matched)
+            parsed["next_steps"] = next_steps
+            parsed["in_progress"] = in_progress
+            return self._rewrite_moved_task(
+                project=project,
+                parsed=parsed,
+                matched=matched,
+                from_section=from_section,
+                to_section="In Progress",
+                message="Claimed task",
+                now=now,
+                task_query=matched,
+                todo_status="in_progress",
+            )
 
     def complete_task(
         self,
@@ -421,32 +435,47 @@ class Vault:
         task: str,
         now: datetime | None = None,
     ) -> TaskMoveResult:
-        parsed = self._load_project_state(project)
-        in_progress = [str(item) for item in parsed["in_progress"]]
-        completed = [str(item) for item in parsed["completed"]]
-        from_section = "In Progress"
-        try:
-            in_progress, completed, matched = move_task_bullet(
-                in_progress,
-                completed,
+        with self._exclusive_task_lock(project):
+            parsed = self._load_project_state(project)
+            in_progress = [str(item) for item in parsed["in_progress"]]
+            completed = [str(item) for item in parsed["completed"]]
+            next_steps = [str(item) for item in parsed["next_steps"]]
+            matched, from_section = self._resolve_task_match(
                 task,
+                (
+                    ("In Progress", in_progress),
+                    ("Next Steps", next_steps),
+                    ("Agent Queue", self._open_queue_items()),
+                    (
+                        "TODO",
+                        self._todo_texts(
+                            project, note_statuses=_TODO_COMPLETE_NOTE_STATUSES
+                        ),
+                    ),
+                ),
+                prefer=("In Progress", "Agent Queue", "TODO"),
             )
-        except TaskMatchError as exc:
-            matched, from_section = self._fallback_to_external_source(project, task, exc)
-            completed = self._append_unique_task(completed, matched)
-        parsed["in_progress"] = in_progress
-        parsed["completed"] = completed
-        return self._rewrite_moved_task(
-            project=project,
-            parsed=parsed,
-            matched=matched,
-            from_section=from_section,
-            to_section="Completed",
-            message="Completed task",
-            now=now,
-            task_query=task,
-            todo_status="done",
-        )
+            if from_section == "In Progress":
+                in_progress, completed, matched = move_task_bullet(
+                    in_progress,
+                    completed,
+                    matched,
+                )
+            else:
+                completed = self._append_unique_task(completed, matched)
+            parsed["in_progress"] = in_progress
+            parsed["completed"] = completed
+            return self._rewrite_moved_task(
+                project=project,
+                parsed=parsed,
+                matched=matched,
+                from_section=from_section,
+                to_section="Completed",
+                message="Completed task",
+                now=now,
+                task_query=matched,
+                todo_status="done",
+            )
 
     def block_task(
         self,
@@ -454,38 +483,52 @@ class Vault:
         task: str,
         now: datetime | None = None,
     ) -> TaskMoveResult:
-        parsed = self._load_project_state(project)
-        next_steps = [str(item) for item in parsed["next_steps"]]
-        in_progress = [str(item) for item in parsed["in_progress"]]
-        blocked = [str(item) for item in parsed["blocked"]]
-        already = self._exact_task_match(blocked, task)
-        if already is not None:
-            raise VaultError(f"Task already blocked: {already}")
-        try:
-            _, from_section = find_task_across_sources(
-                (("Next Steps", next_steps), ("In Progress", in_progress)),
+        with self._exclusive_task_lock(project):
+            parsed = self._load_project_state(project)
+            next_steps = [str(item) for item in parsed["next_steps"]]
+            in_progress = [str(item) for item in parsed["in_progress"]]
+            blocked = [str(item) for item in parsed["blocked"]]
+            already = self._exact_task_match(blocked, task)
+            if already is not None:
+                raise VaultError(f"Task already blocked: {already}")
+            matched, from_section = self._resolve_task_match(
                 task,
+                (
+                    ("Blocked", blocked),
+                    ("Next Steps", next_steps),
+                    ("In Progress", in_progress),
+                    ("Agent Queue", self._open_queue_items()),
+                    (
+                        "TODO",
+                        self._todo_texts(project, note_statuses=_TODO_CLAIM_NOTE_STATUSES),
+                    ),
+                ),
+                prefer=("Blocked", "Next Steps", "In Progress"),
             )
-        except TaskMatchError as exc:
-            raise VaultError(str(exc)) from exc
-        if from_section == "Next Steps":
-            next_steps, blocked, matched = move_task_bullet(next_steps, blocked, task)
-        else:
-            in_progress, blocked, matched = move_task_bullet(in_progress, blocked, task)
-        parsed["next_steps"] = next_steps
-        parsed["in_progress"] = in_progress
-        parsed["blocked"] = blocked
-        return self._rewrite_moved_task(
-            project=project,
-            parsed=parsed,
-            matched=matched,
-            from_section=from_section,
-            to_section="Blocked",
-            message="Blocked task",
-            now=now,
-            task_query=task,
-            sync_agent_queue=False,
-        )
+            if from_section == "Blocked":
+                raise VaultError(f"Task already blocked: {matched}")
+            if from_section == "Next Steps":
+                next_steps, blocked, matched = move_task_bullet(
+                    next_steps, blocked, matched
+                )
+            else:
+                in_progress, blocked, matched = move_task_bullet(
+                    in_progress, blocked, matched
+                )
+            parsed["next_steps"] = next_steps
+            parsed["in_progress"] = in_progress
+            parsed["blocked"] = blocked
+            return self._rewrite_moved_task(
+                project=project,
+                parsed=parsed,
+                matched=matched,
+                from_section=from_section,
+                to_section="Blocked",
+                message="Blocked task",
+                now=now,
+                task_query=matched,
+                sync_agent_queue=False,
+            )
 
     def unblock_task(
         self,
@@ -493,29 +536,44 @@ class Vault:
         task: str,
         now: datetime | None = None,
     ) -> TaskMoveResult:
-        parsed = self._load_project_state(project)
-        next_steps = [str(item) for item in parsed["next_steps"]]
-        blocked = [str(item) for item in parsed["blocked"]]
-        already = self._exact_task_match(next_steps, task)
-        if already is not None:
-            raise VaultError(f"Task already in next steps: {already}")
-        try:
-            blocked, next_steps, matched = move_task_bullet(blocked, next_steps, task)
-        except TaskMatchError as exc:
-            raise VaultError(str(exc)) from exc
-        parsed["blocked"] = blocked
-        parsed["next_steps"] = next_steps
-        return self._rewrite_moved_task(
-            project=project,
-            parsed=parsed,
-            matched=matched,
-            from_section="Blocked",
-            to_section="Next Steps",
-            message="Unblocked task",
-            now=now,
-            task_query=task,
-            sync_agent_queue=False,
-        )
+        with self._exclusive_task_lock(project):
+            parsed = self._load_project_state(project)
+            next_steps = [str(item) for item in parsed["next_steps"]]
+            blocked = [str(item) for item in parsed["blocked"]]
+            already = self._exact_task_match(next_steps, task)
+            if already is not None:
+                raise VaultError(f"Task already in next steps: {already}")
+            matched, from_section = self._resolve_task_match(
+                task,
+                (
+                    ("Next Steps", next_steps),
+                    ("Blocked", blocked),
+                    ("Agent Queue", self._open_queue_items()),
+                    (
+                        "TODO",
+                        self._todo_texts(project, note_statuses=_TODO_CLAIM_NOTE_STATUSES),
+                    ),
+                ),
+                prefer=("Next Steps", "Blocked"),
+            )
+            if from_section == "Next Steps":
+                raise VaultError(f"Task already in next steps: {matched}")
+            blocked, next_steps, matched = move_task_bullet(
+                blocked, next_steps, matched
+            )
+            parsed["blocked"] = blocked
+            parsed["next_steps"] = next_steps
+            return self._rewrite_moved_task(
+                project=project,
+                parsed=parsed,
+                matched=matched,
+                from_section="Blocked",
+                to_section="Next Steps",
+                message="Unblocked task",
+                now=now,
+                task_query=matched,
+                sync_agent_queue=False,
+            )
 
     def _load_project_state(
         self, project: str
@@ -542,36 +600,48 @@ class Vault:
             updated.append(task)
         return updated
 
-    def _matching_open_queue_item(self, task: str) -> str | None:
+    def _open_queue_items(self) -> list[str]:
         path = self.agent_queue_path()
         if not path.exists() or not path.is_file():
-            return None
-        try:
-            return find_matching_task(parse_open_checkboxes(self._read_text(path)), task)
-        except TaskMatchError as exc:
-            if "No matching" in str(exc):
-                return None
-            raise VaultError(str(exc)) from exc
+            return []
+        return parse_open_checkboxes(self._read_text(path))
 
-    def _fallback_to_external_source(
+    def _todo_texts(
         self,
         project: str,
+        *,
+        note_statuses: frozenset[str],
+    ) -> list[str]:
+        return [item.text for item in self._collect_todo_items(project, note_statuses=note_statuses)]
+
+    def _resolve_task_match(
+        self,
         task: str,
-        exc: TaskMatchError,
+        sources: Sequence[tuple[str, Sequence[str]]],
+        *,
+        prefer: Sequence[str],
     ) -> tuple[str, str]:
-        if "No matching" not in str(exc):
+        try:
+            return resolve_unique_task(sources, task, prefer=prefer)
+        except TaskMatchError as exc:
             raise VaultError(str(exc)) from exc
-        queue_item = self._matching_open_queue_item(task)
-        if queue_item is not None:
-            return queue_item, "Agent Queue"
-        todo_item = self._find_todo_match(
-            project,
-            task,
-            note_statuses=_TODO_CLAIM_NOTE_STATUSES,
-        )
-        if todo_item is None:
-            raise VaultError(str(exc)) from exc
-        return todo_item.text, "TODO"
+
+    @contextmanager
+    def _exclusive_task_lock(self, project: str) -> Iterator[None]:
+        """Serialize claim/complete/block/unblock for one project.
+
+        The lock file lives in the process temp dir so the vault is never
+        given an extra note (including Agent Queue.md).
+        """
+        slug = self.project_slug(project)
+        key = hashlib.sha256(f"{self.root}:{slug}".encode()).hexdigest()[:16]
+        lock_path = Path(tempfile.gettempdir()) / f"obsidian-mcp-task-{key}.lock"
+        with lock_path.open("a+", encoding="utf-8") as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
     def _prepare_queue_check(self, task: str, *, required: bool = False) -> _QueueSync:
         """Prepare a unique Agent Queue checkbox check, or fail closed.
@@ -587,7 +657,7 @@ class Vault:
         existing = self._read_text(path)
         rel = self.relative_path(path)
         try:
-            updated, _matched = move_open_checkbox(existing, task)
+            updated, _matched = move_open_checkbox(existing, task, canonical=True)
         except TaskMatchError as exc:
             detail = str(exc)
             if "Ambiguous" in detail or required:

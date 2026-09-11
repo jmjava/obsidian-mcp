@@ -39,6 +39,7 @@ _BULLET_RE = re.compile(r"^[-*+]\s+(?:\[([ xX])\]\s+)?(.*\S)\s*$")
 _CHECKBOX_LINE_RE = re.compile(r"^([-*+][ \t]+)\[([ xX])\]([ \t]+)(.*\S)[ \t]*$")
 _LEADING_BULLET_RE = re.compile(r"^[-*+]\s+")
 _LEADING_CHECKBOX_RE = re.compile(r"^\[[ xX]\]\s+")
+_TRAILING_TASK_META_RE = re.compile(r"(?:\s+#\S+|\s+\[repo::[^\]]+\])$")
 
 _PROSE_FIELDS = {
     "objective": "objective",
@@ -381,17 +382,31 @@ def _iter_open_checkbox_lines(text: str) -> list[tuple[int, re.Match[str], str]]
     return rows
 
 
-def move_open_checkbox(text: str, query: str) -> tuple[str, str]:
+def move_open_checkbox(
+    text: str,
+    query: str,
+    *,
+    canonical: bool = False,
+) -> tuple[str, str]:
     """Check the unique matching unchecked Agent Queue checkbox.
 
     Other lines are preserved. The rewritten line is secret-redacted.
     Returns ``(updated_markdown, matched_item_text)``.
+
+    ``canonical=True`` matches the same task after stripping trailing
+    ``#tags`` and ``[repo::...]`` markers. Use that after a claim has
+    already resolved the item so a short query cannot check a different
+    queue line.
     """
     lines = text.splitlines()
     open_rows = _iter_open_checkbox_lines(text)
     if not open_rows:
         raise TaskMatchError(f"No matching task for {query!r}")
-    matched = find_matching_task([item for _index, _match, item in open_rows], query)
+    open_items = [item for _index, _match, item in open_rows]
+    if canonical:
+        matched = find_canonical_task(open_items, query)
+    else:
+        matched = find_matching_task(open_items, query)
     hits = [
         row
         for row in open_rows
@@ -584,22 +599,106 @@ def normalize_task_text(value: str) -> str:
     return " ".join(text.split()).casefold()
 
 
-def find_matching_task(items: Sequence[str], query: str) -> str:
-    """Return the unique item matching ``query`` exactly or as a substring."""
+def canonical_task_text(value: str) -> str:
+    """Normalize task text and strip trailing ``#tags`` / ``[repo::...]``.
+
+    Secrets are redacted first so a Project State rewrite that already
+    replaced ``password=...`` still clusters with the raw queue line.
+    """
+    text = normalize_task_text(redact_secrets(value))
+    while True:
+        stripped = _TRAILING_TASK_META_RE.sub("", text)
+        if stripped == text:
+            return text
+        text = stripped
+
+
+def find_canonical_task(items: Sequence[str], query: str) -> str:
+    """Return the unique item with the same canonical task text as ``query``."""
+    needle = canonical_task_text(query)
+    if not needle:
+        raise TaskMatchError("task text is required")
+    hits = [item for item in items if canonical_task_text(item) == needle]
+    if len(hits) == 1:
+        return hits[0]
+    if len(hits) > 1:
+        raise TaskMatchError(f"Ambiguous task match for {query!r}")
+    raise TaskMatchError(f"No matching task for {query!r}")
+
+
+def cluster_matching_tasks(
+    sources: Sequence[tuple[str, Sequence[str]]],
+    query: str,
+) -> dict[str, list[tuple[str, str]]]:
+    """Group substring matches by canonical task text.
+
+    An exact (normalized or canonical) hit wins over other substring
+    groups so ``Write docs`` does not collide with ``Write docs later``.
+    """
     needle = normalize_task_text(query)
     if not needle:
         raise TaskMatchError("task text is required")
-    exact = [item for item in items if normalize_task_text(item) == needle]
-    if len(exact) == 1:
-        return exact[0]
-    if len(exact) > 1:
+    grouped: dict[str, list[tuple[str, str]]] = {}
+    for name, items in sources:
+        for item in items:
+            key = normalize_task_text(item)
+            if needle != key and needle not in key:
+                continue
+            grouped.setdefault(canonical_task_text(item), []).append((name, item))
+    exact = {
+        canon: rows
+        for canon, rows in grouped.items()
+        if canon == needle
+        or any(normalize_task_text(item) == needle for _source, item in rows)
+    }
+    if exact:
+        return exact
+    return grouped
+
+
+def resolve_unique_task(
+    sources: Sequence[tuple[str, Sequence[str]]],
+    query: str,
+    *,
+    prefer: Sequence[str],
+) -> tuple[str, str]:
+    """Return ``(matched_text, source_name)`` for one canonical task.
+
+    Distinct canonical texts that share a substring (``docs`` vs
+    ``Write docs`` and ``Fix docs-drift``) are ambiguous, including
+    across Project State, Agent Queue, and TODO sources.
+    """
+    grouped = cluster_matching_tasks(sources, query)
+    if not grouped:
+        raise TaskMatchError(f"No matching task for {query!r}")
+    if len(grouped) > 1:
         raise TaskMatchError(f"Ambiguous task match for {query!r}")
-    partial = [item for item in items if needle in normalize_task_text(item)]
-    if len(partial) == 1:
-        return partial[0]
-    if len(partial) > 1:
-        raise TaskMatchError(f"Ambiguous task match for {query!r}")
+    rows = next(iter(grouped.values()))
+    by_source: dict[str, list[str]] = {}
+    for source, item in rows:
+        by_source.setdefault(source, []).append(item)
+    for source in prefer:
+        items = by_source.get(source)
+        if not items:
+            continue
+        unique: list[str] = []
+        seen: set[str] = set()
+        for item in items:
+            key = normalize_task_text(item)
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(item)
+        if len(unique) > 1:
+            raise TaskMatchError(f"Ambiguous task match for {query!r}")
+        return unique[0], source
     raise TaskMatchError(f"No matching task for {query!r}")
+
+
+def find_matching_task(items: Sequence[str], query: str) -> str:
+    """Return the unique item matching ``query`` exactly or as a substring."""
+    matched, _source = resolve_unique_task((("items", items),), query, prefer=("items",))
+    return matched
 
 
 def find_task_across_sources(
@@ -607,27 +706,8 @@ def find_task_across_sources(
     query: str,
 ) -> tuple[str, str]:
     """Return ``(matched_text, source_name)`` for a unique match across lists."""
-    needle = normalize_task_text(query)
-    if not needle:
-        raise TaskMatchError("task text is required")
-    exact: list[tuple[str, str]] = []
-    partial: list[tuple[str, str]] = []
-    for name, items in sources:
-        for item in items:
-            key = normalize_task_text(item)
-            if key == needle:
-                exact.append((item, name))
-            elif needle in key:
-                partial.append((item, name))
-    if len(exact) == 1:
-        return exact[0]
-    if len(exact) > 1:
-        raise TaskMatchError(f"Ambiguous task match for {query!r}")
-    if len(partial) == 1:
-        return partial[0]
-    if len(partial) > 1:
-        raise TaskMatchError(f"Ambiguous task match for {query!r}")
-    raise TaskMatchError(f"No matching task for {query!r}")
+    prefer = [name for name, _items in sources]
+    return resolve_unique_task(sources, query, prefer=prefer)
 
 
 def move_task_bullet(
@@ -692,8 +772,10 @@ __all__ = [
     "TaskMatchError",
     "append_under_heading",
     "bullet_list",
+    "canonical_task_text",
     "excerpt_around",
     "extract_title",
+    "find_canonical_task",
     "find_matching_task",
     "find_task_across_sources",
     "format_date",
@@ -715,6 +797,7 @@ __all__ = [
     "parse_project_state",
     "patch_project_state_sections",
     "redact_secrets",
+    "resolve_unique_task",
     "section",
     "set_frontmatter_field",
     "slugify",
