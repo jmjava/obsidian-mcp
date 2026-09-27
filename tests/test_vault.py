@@ -1270,3 +1270,23 @@ def test_search_memory_finds_daily_note_phrase(tmp_path: Path) -> None:
     assert any(hit.path == "Daily/2026-08-22.md" for hit in hits)
     assert daily.path == "Daily/2026-08-22.md"
     assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
+def test_claim_task_leaves_in_progress_todo_note_unchanged(tmp_path: Path) -> None:
+    """claim_task matches open TODO notes, not a note already marked in_progress."""
+    vault = make_vault(tmp_path)
+    body = (
+        "---\nstatus: in_progress\nproject: spring-auth\n---\n\n"
+        "# Example leftover\n\n"
+        "- [ ] Wire the TODO scanner\n"
+    )
+    todo = _write_todo(vault, "2026-09-10-example.md", body)
+    with pytest.raises(VaultError, match="No matching task"):
+        vault.claim_task("spring-auth", "Example leftover", now=STAMP)
+    assert todo.read_text(encoding="utf-8") == body
+    listed = [item.text for item in vault.list_open_tasks("spring-auth").tasks]
+    assert "Example leftover" not in listed
+    assert listed == ["Wire the TODO scanner"]
+    assert not vault.project_state_path("spring-auth").exists()
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+    assert not (vault.root / "Daily").exists()
