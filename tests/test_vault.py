@@ -12,7 +12,7 @@ from obsidian_dev_memory.markdown import (
     TaskMatchError,
     find_matching_task,
 )
-from obsidian_dev_memory.vault import Vault, VaultError, VaultPathError
+from obsidian_dev_memory.vault import Vault, VaultConfigError, VaultError, VaultPathError
 
 STAMP = datetime(2026, 8, 22, 11, 42, tzinfo=ZoneInfo("America/New_York"))
 
@@ -29,6 +29,32 @@ def test_creates_project_directories(tmp_path: Path) -> None:
     assert project_dir.name == "spring-auth"
     assert (project_dir / "Sessions").is_dir()
     assert (project_dir / "Decisions").is_dir()
+
+
+def test_memory_root_rejects_absolute_and_parent_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """OBSIDIAN_MEMORY_ROOT must stay a relative folder inside the vault."""
+    root = tmp_path / "vault"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+
+    with pytest.raises(VaultConfigError, match="relative vault folder"):
+        Vault(root, memory_root=str(outside))
+    with pytest.raises(VaultConfigError, match="relative vault folder"):
+        Vault(root, memory_root="../outside")
+
+    monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(root))
+    monkeypatch.setenv("OBSIDIAN_MEMORY_ROOT", str(outside))
+    with pytest.raises(VaultConfigError, match="relative vault folder"):
+        Vault.from_env()
+    monkeypatch.setenv("OBSIDIAN_MEMORY_ROOT", "../outside")
+    with pytest.raises(VaultConfigError, match="relative vault folder"):
+        Vault.from_env()
+
+    assert list(root.iterdir()) == []
+    assert list(outside.iterdir()) == []
 
 
 def test_writes_project_state(tmp_path: Path) -> None:
