@@ -307,6 +307,13 @@ def test_rejects_absolute_paths(tmp_path: Path) -> None:
         vault.read_note(str(secret))
 
 
+def test_rejects_null_byte_in_note_path_before_any_vault_write(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    with pytest.raises(VaultPathError, match="Invalid path"):
+        vault.read_note("notes/bad\x00.md")
+    assert list(vault.root.iterdir()) == []
+
+
 def test_prevents_escaping_vault_root_via_symlink(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     outside = tmp_path / "outside"
