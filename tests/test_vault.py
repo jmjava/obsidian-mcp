@@ -317,6 +317,31 @@ def test_prevents_escaping_vault_root_via_symlink(tmp_path: Path) -> None:
         vault.read_note("leak/secret.txt")
 
 
+def test_search_memory_omits_session_symlink_outside_the_vault(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    vault.update_project_state(
+        "spring-auth",
+        objective="Keep the inside phrase visible",
+        now=STAMP,
+    )
+    outside = tmp_path / "outside-note"
+    outside.mkdir()
+    leaked = outside / "secret.md"
+    original = "# Outside\n\nOUTSIDE-ONLY-PHRASE\n"
+    leaked.write_text(original, encoding="utf-8")
+    sessions = vault.ensure_project("spring-auth") / "Sessions"
+    (sessions / "leak.md").symlink_to(leaked)
+
+    hits = vault.search_memory("OUTSIDE-ONLY-PHRASE")
+    assert hits == []
+    assert leaked.read_text(encoding="utf-8") == original
+
+    inside = vault.search_memory("inside phrase")
+    assert inside
+    assert all(hit.path.endswith("Project State.md") for hit in inside)
+    assert all("OUTSIDE-ONLY-PHRASE" not in hit.matching_excerpt for hit in inside)
+
+
 def test_list_blocked_tasks_reads_blocked_and_blockers(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     daily = vault.root / "Daily" / "2026-08-22.md"
