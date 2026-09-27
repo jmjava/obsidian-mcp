@@ -1270,3 +1270,25 @@ def test_search_memory_finds_daily_note_phrase(tmp_path: Path) -> None:
     assert any(hit.path == "Daily/2026-08-22.md" for hit in hits)
     assert daily.path == "Daily/2026-08-22.md"
     assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
+def test_search_memory_ignores_nested_daily_notes(tmp_path: Path) -> None:
+    """Nested Daily notes are outside the search index and are not rewritten."""
+    vault = make_vault(tmp_path)
+    top = vault.root / "Daily" / "2026-08-22.md"
+    top.parent.mkdir()
+    top.write_text("# Daily\n\nTOP-LEVEL-DAILY-PHRASE-z21\n", encoding="utf-8")
+    nested = vault.root / "Daily" / "archive" / "old.md"
+    nested.parent.mkdir()
+    original = "# Archive\n\nNESTED-DAILY-ONLY-PHRASE-z21\n"
+    nested.write_text(original, encoding="utf-8")
+
+    nested_hits = vault.search_memory("NESTED-DAILY-ONLY-PHRASE-z21")
+    assert nested_hits == []
+    assert nested.read_text(encoding="utf-8") == original
+
+    hits = vault.search_memory("TOP-LEVEL-DAILY-PHRASE-z21")
+    assert hits
+    assert any(hit.path == "Daily/2026-08-22.md" for hit in hits)
+    assert all("Daily/archive/" not in hit.path for hit in hits)
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
