@@ -231,6 +231,29 @@ def test_appends_daily_note(tmp_path: Path) -> None:
     assert "Afternoon review" in text
 
 
+def test_append_daily_note_redacts_aws_access_key_before_write(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    path = vault.root / "Daily" / "2026-08-22.md"
+    path.parent.mkdir(parents=True)
+    prior = "# Daily\n\nKeep the morning note\n"
+    path.write_text(prior, encoding="utf-8")
+    key = "AKIAIOSFODNN7EXAMPLE"
+    result = vault.append_daily_note(
+        f"Rotated cloud key {key} during the deploy",
+        heading="Work",
+        now=STAMP,
+    )
+    text = path.read_text(encoding="utf-8")
+    assert result.path == "Daily/2026-08-22.md"
+    assert "Keep the morning note" in text
+    assert key not in text
+    assert SECRET_PLACEHOLDER in text
+    assert "Rotated cloud key" in text
+    note = vault.read_note(result.path)
+    assert key not in note["content"]
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
 def test_append_daily_note_usage_does_not_splice_under_burn_plan_when_later_usage_exists(
     tmp_path: Path,
 ) -> None:
