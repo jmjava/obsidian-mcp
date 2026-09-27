@@ -12,7 +12,12 @@ from obsidian_dev_memory.markdown import (
     TaskMatchError,
     find_matching_task,
 )
-from obsidian_dev_memory.vault import Vault, VaultError, VaultPathError
+from obsidian_dev_memory.vault import (
+    DEFAULT_CONTEXT_LIMIT,
+    Vault,
+    VaultError,
+    VaultPathError,
+)
 
 STAMP = datetime(2026, 8, 22, 11, 42, tzinfo=ZoneInfo("America/New_York"))
 
@@ -205,6 +210,41 @@ def test_get_project_context_redacts_password_assignment(tmp_path: Path) -> None
     assert SECRET_PLACEHOLDER in context.project_state
     assert "Rotate" in context.project_state
     assert state.read_text(encoding="utf-8") == raw
+
+
+def test_get_project_context_truncates_oversized_notes(tmp_path: Path) -> None:
+    """Returned bodies stop at the context cap and omit the rest of the note."""
+    vault = make_vault(tmp_path)
+    vault.ensure_project("spring-auth")
+    tail = "TAILMARKER-not-returned"
+    filler = "A" * (DEFAULT_CONTEXT_LIMIT + 80)
+    raw_state = f"# Project State\n\n{filler}{tail}\n"
+    raw_session = f"# Session\n\n{filler}{tail}\n"
+    state = vault.project_state_path("spring-auth")
+    state.write_text(raw_state, encoding="utf-8")
+    session = (
+        vault.root
+        / "AI Memory"
+        / "Projects"
+        / "spring-auth"
+        / "Sessions"
+        / "2026-08-22.md"
+    )
+    session.parent.mkdir(parents=True, exist_ok=True)
+    session.write_text(raw_session, encoding="utf-8")
+
+    context = vault.get_project_context("spring-auth", recent_sessions=5)
+    cap = DEFAULT_CONTEXT_LIMIT + len("\n...")
+    assert tail not in context.project_state
+    assert context.project_state.endswith("...")
+    assert len(context.project_state) <= cap
+    assert context.recent_sessions
+    session_body = context.recent_sessions[0].content
+    assert tail not in session_body
+    assert session_body.endswith("...")
+    assert len(session_body) <= cap
+    assert state.read_text(encoding="utf-8") == raw_state
+    assert session.read_text(encoding="utf-8") == raw_session
 
 
 def test_write_redacts_unlabeled_connection_string(tmp_path: Path) -> None:
