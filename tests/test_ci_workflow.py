@@ -6,9 +6,14 @@ WORKFLOW = REPO_ROOT / ".github" / "workflows" / "pytest.yml"
 
 def test_ci_workflow_runs_ruff_and_pytest() -> None:
     text = WORKFLOW.read_text(encoding="utf-8")
-    assert "ruff check src/ tests/" in text
+    assert "scripts/ruff_baseline_gate.py" in text
+    assert "scripts/complexity_diff_gate.py" in text
+    assert "scripts/hotspot_gate.py" in text
+    assert "scripts/mutation_gate.py" in text
     assert "pytest tests/" in text
     assert "python-version: \"3.12\"" in text
+    assert "write-baseline" not in text
+    assert "--fix" not in text
 
 
 def test_ci_workflow_can_fail_redact_wipe_and_claim_tests() -> None:

@@ -1,0 +1,13 @@
+{
+  "source": "src/obsidian_dev_memory/markdown.py",
+  "mutmut": "3.8.0",
+  "killed": 557,
+  "survived": 263,
+  "total": 897,
+  "no_tests": 76,
+  "skipped": 0,
+  "suspicious": 0,
+  "timeout": 1,
+  "check_was_interrupted_by_user": 0,
+  "segfault": 0
+}
