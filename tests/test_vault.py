@@ -90,6 +90,29 @@ def test_update_project_state_partial_rewrite_keeps_custom_and_omitted_sections(
     assert "Agent Queue.md" not in text
 
 
+def test_update_project_state_empty_objective_clears_only_that_section(
+    tmp_path: Path,
+) -> None:
+    vault = make_vault(tmp_path)
+    vault.update_project_state(
+        "spring-auth",
+        objective="Ship consent",
+        current_state="Design complete",
+        next_steps=["Write docs"],
+        now=STAMP,
+    )
+    state = vault.project_state_path("spring-auth")
+    vault.update_project_state("spring-auth", objective="", now=STAMP)
+    text = state.read_text(encoding="utf-8")
+    assert "## Objective" not in text
+    assert "Ship consent" not in text
+    assert "## Current State" in text
+    assert "Design complete" in text
+    assert "## Next Steps" in text
+    assert "Write docs" in text
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
 def test_appends_session(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     first = vault.capture_work_session(
