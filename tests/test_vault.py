@@ -1270,3 +1270,25 @@ def test_search_memory_finds_daily_note_phrase(tmp_path: Path) -> None:
     assert any(hit.path == "Daily/2026-08-22.md" for hit in hits)
     assert daily.path == "Daily/2026-08-22.md"
     assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
+def test_search_memory_clamps_non_positive_limit_to_one_hit(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    days = ("2026-08-01", "2026-08-02", "2026-08-03")
+    for day in days:
+        vault.append_daily_note(f"shared alpha token on {day}", date=day)
+    expected = {f"Daily/{day}.md" for day in days}
+
+    one = vault.search_memory("alpha token", limit=1)
+    assert len(one) == 1
+    assert one[0].path in expected
+    assert "alpha token" in one[0].matching_excerpt
+
+    for bad_limit in (0, -5):
+        clamped = vault.search_memory("alpha token", limit=bad_limit)
+        assert len(clamped) == 1
+        assert clamped[0].path in expected
+
+    all_hits = vault.search_memory("alpha token", limit=20)
+    assert {hit.path for hit in all_hits} == expected
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
