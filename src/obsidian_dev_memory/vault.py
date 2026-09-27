@@ -76,7 +76,18 @@ class _QueueSync(NamedTuple):
 
 
 class VaultError(Exception):
-    """Base error for vault operations."""
+    """Base error for vault operations.
+
+    Messages are tool-facing, so secret-looking text is redacted here.
+    On-disk notes are left unchanged.
+    """
+
+    def __init__(self, message: object = "", *args: object) -> None:
+        parts = (message, *args)
+        redacted = tuple(
+            redact_secrets(part) if isinstance(part, str) else part for part in parts
+        )
+        super().__init__(*redacted)
 
 
 class VaultConfigError(VaultError):
