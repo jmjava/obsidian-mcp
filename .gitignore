@@ -9,6 +9,7 @@ build/
 *.egg-info/
 .coverage
 htmlcov/
+mutants/
 
 # Generated machine-specific editor MCP configs
 .cursor/mcp.json
