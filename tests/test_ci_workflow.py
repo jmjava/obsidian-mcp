@@ -11,6 +11,16 @@ def test_ci_workflow_runs_ruff_and_pytest() -> None:
     assert "python-version: \"3.12\"" in text
 
 
+def test_ci_workflow_runs_smoke_against_a_temp_fixture() -> None:
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "./scripts/smoke-test.sh" in text
+    assert "mktemp -d /tmp/obsidian-smoke-fixture." in text
+    assert "env -u OBSIDIAN_VAULT_PATH ./scripts/smoke-test.sh" in text
+    assert "Documents/Obsidian" not in text
+    assert "$HOME/Documents" not in text
+    assert "pytest tests/" in text
+
+
 def test_ci_workflow_can_fail_redact_wipe_and_claim_tests() -> None:
     names = [
         "test_read_note_redacts_password_assignment",
