@@ -395,6 +395,22 @@ def test_list_blocked_tasks_redacts_secrets_without_rewriting(tmp_path: Path) ->
     assert daily.read_text(encoding="utf-8") == "# Daily\n\nDo not overwrite me\n"
 
 
+def test_block_task_error_redacts_parsed_blocker(tmp_path: Path) -> None:
+    """A raw on-disk blocker must not be echoed in the tool error."""
+    vault = make_vault(tmp_path)
+    vault.ensure_project("spring-auth")
+    state = vault.project_state_path("spring-auth")
+    raw = "# Project State\n\n## Blocked\n\n- Rotate password=hunter2\n"
+    state.write_text(raw, encoding="utf-8")
+    with pytest.raises(VaultError, match="already blocked") as caught:
+        vault.block_task("spring-auth", "Rotate", now=STAMP)
+    message = str(caught.value)
+    assert "password=" not in message
+    assert "hunter2" not in message
+    assert SECRET_PLACEHOLDER in message
+    assert state.read_text(encoding="utf-8") == raw
+
+
 def test_list_open_tasks_reads_next_steps_and_agent_queue(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     vault.update_project_state(
