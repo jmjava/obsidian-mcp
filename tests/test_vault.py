@@ -1270,3 +1270,23 @@ def test_search_memory_finds_daily_note_phrase(tmp_path: Path) -> None:
     assert any(hit.path == "Daily/2026-08-22.md" for hit in hits)
     assert daily.path == "Daily/2026-08-22.md"
     assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
+def test_record_decision_redacts_bearer_token_before_write(tmp_path: Path) -> None:
+    """Decision prose must not persist a Bearer token; the file is written redacted."""
+    token = "Bearer fixture-token-value-1234567890"
+    vault = make_vault(tmp_path)
+    written = vault.record_decision(
+        "spring-auth",
+        title="Keep tokens out of notes",
+        context="A caller sent an Authorization header",
+        decision=f"Reject Authorization: {token} and store a generic description",
+        now=STAMP,
+    )
+    text = (vault.root / written.path).read_text(encoding="utf-8")
+    assert "fixture-token-value-1234567890" not in text
+    assert token not in text
+    assert SECRET_PLACEHOLDER in text
+    assert "store a generic description" in text
+    assert written.path.endswith("Decisions/2026-08-22-keep-tokens-out-of-notes.md")
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()

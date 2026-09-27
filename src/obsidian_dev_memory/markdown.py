@@ -19,12 +19,14 @@ _SECRET_PATTERNS = (
         r"\b(?:sk|pk|rk|ghp|gho|ghu|ghs|ghr|github_pat|xox[baprs]|AIza)[-_][A-Za-z0-9._-]{16,}\b"
     ),
     re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+    # Before labeled assignments: `Authorization: Bearer <token>` must not
+    # leave the token after `\S+` consumes only the word Bearer.
+    re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._\-+=/]{16,}"),
     re.compile(
         r"(?i)\b(?:password|passwd|pwd|secret|api[_-]?key|access[_-]?token|"
         r"refresh[_-]?token|private[_-]?key|db[_-]?password|authorization)"
         r"\s*[:=]\s*\S+"
     ),
-    re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._\-+=/]{16,}"),
     # Unlabeled URI userinfo: postgres://user:pass@host, redis://:pass@host
     re.compile(
         r"(?i)\b(?:jdbc:)?[a-z][a-z0-9+.-]*://"
