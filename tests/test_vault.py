@@ -207,6 +207,66 @@ def test_get_project_context_redacts_password_assignment(tmp_path: Path) -> None
     assert state.read_text(encoding="utf-8") == raw
 
 
+def test_get_project_context_returns_only_the_newest_notes(tmp_path: Path) -> None:
+    """Return the newest N session and decision notes, and none when the limit is not positive."""
+    vault = make_vault(tmp_path)
+    vault.ensure_project("spring-auth")
+    sessions = vault.root / "AI Memory" / "Projects" / "spring-auth" / "Sessions"
+    decisions = vault.root / "AI Memory" / "Projects" / "spring-auth" / "Decisions"
+    written = {
+        sessions / "2026-08-20.md": "# Old session\n\nOLDEST-SESSION\n",
+        sessions / "2026-08-21.md": "# Mid session\n\nMIDDLE-SESSION\n",
+        sessions / "2026-08-22.md": "# New session\n\nNEWEST-SESSION\n",
+        decisions / "2026-08-20-old.md": "# Old decision\n\nOLDEST-DECISION\n",
+        decisions / "2026-08-21-mid.md": "# Mid decision\n\nMIDDLE-DECISION\n",
+        decisions / "2026-08-22-new.md": "# New decision\n\nNEWEST-DECISION\n",
+    }
+    for path, body in written.items():
+        path.write_text(body, encoding="utf-8")
+
+    newest = vault.get_project_context(
+        "spring-auth",
+        recent_sessions=1,
+        recent_decisions=1,
+    )
+    assert [doc.path for doc in newest.recent_sessions] == [
+        "AI Memory/Projects/spring-auth/Sessions/2026-08-22.md",
+    ]
+    assert "NEWEST-SESSION" in newest.recent_sessions[0].content
+    assert "MIDDLE-SESSION" not in newest.recent_sessions[0].content
+    assert "OLDEST-SESSION" not in newest.recent_sessions[0].content
+    assert [doc.path for doc in newest.recent_decisions] == [
+        "AI Memory/Projects/spring-auth/Decisions/2026-08-22-new.md",
+    ]
+    assert "NEWEST-DECISION" in newest.recent_decisions[0].content
+    assert "MIDDLE-DECISION" not in newest.recent_decisions[0].content
+    assert "OLDEST-DECISION" not in newest.recent_decisions[0].content
+
+    pair = vault.get_project_context(
+        "spring-auth",
+        recent_sessions=2,
+        recent_decisions=2,
+    )
+    assert [doc.path for doc in pair.recent_sessions] == [
+        "AI Memory/Projects/spring-auth/Sessions/2026-08-22.md",
+        "AI Memory/Projects/spring-auth/Sessions/2026-08-21.md",
+    ]
+    assert [doc.path for doc in pair.recent_decisions] == [
+        "AI Memory/Projects/spring-auth/Decisions/2026-08-22-new.md",
+        "AI Memory/Projects/spring-auth/Decisions/2026-08-21-mid.md",
+    ]
+
+    empty = vault.get_project_context(
+        "spring-auth",
+        recent_sessions=0,
+        recent_decisions=-1,
+    )
+    assert empty.recent_sessions == []
+    assert empty.recent_decisions == []
+    for path, body in written.items():
+        assert path.read_text(encoding="utf-8") == body
+
+
 def test_write_redacts_unlabeled_connection_string(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     result = vault.update_project_state(
