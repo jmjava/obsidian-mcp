@@ -220,6 +220,28 @@ def test_write_redacts_unlabeled_connection_string(tmp_path: Path) -> None:
     assert "DSN" in text
 
 
+def test_update_project_state_redacts_private_key_before_write(tmp_path: Path) -> None:
+    """A PEM private key is replaced before Project State hits disk."""
+    vault = make_vault(tmp_path)
+    material = "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCfixture"
+    pem = (
+        "-----BEGIN PRIVATE KEY-----\n"
+        f"{material}\n"
+        "-----END PRIVATE KEY-----"
+    )
+    result = vault.update_project_state(
+        "spring-auth",
+        notes=[f"Do not store {pem}"],
+        now=STAMP,
+    )
+    text = (vault.root / result.path).read_text(encoding="utf-8")
+    assert "BEGIN PRIVATE KEY" not in text
+    assert "END PRIVATE KEY" not in text
+    assert material not in text
+    assert SECRET_PLACEHOLDER in text
+    assert "Do not store" in text
+
+
 def test_appends_daily_note(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     first = vault.append_daily_note("Morning review", heading="Work", now=STAMP)
