@@ -1270,3 +1270,16 @@ def test_search_memory_finds_daily_note_phrase(tmp_path: Path) -> None:
     assert any(hit.path == "Daily/2026-08-22.md" for hit in hits)
     assert daily.path == "Daily/2026-08-22.md"
     assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
+def test_unblock_task_leaves_agent_queue_only_item_unchecked(tmp_path: Path) -> None:
+    """unblock_task moves Blocked or Blockers bullets, not a queue-only checkbox."""
+    vault = make_vault(tmp_path)
+    queue_body = "# Agent Queue\n\n- [ ] Personal chore\n- [ ] Keep this open\n"
+    queue = _write_agent_queue(vault, queue_body)
+    with pytest.raises(VaultError, match="No matching task"):
+        vault.unblock_task("spring-auth", "Personal chore", now=STAMP)
+    assert queue.read_text(encoding="utf-8") == queue_body
+    assert "- [x] Personal chore" not in queue.read_text(encoding="utf-8")
+    assert not vault.project_state_path("spring-auth").exists()
+    assert not (vault.root / "Daily").exists()
