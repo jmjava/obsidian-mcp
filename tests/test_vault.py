@@ -1270,3 +1270,23 @@ def test_search_memory_finds_daily_note_phrase(tmp_path: Path) -> None:
     assert any(hit.path == "Daily/2026-08-22.md" for hit in hits)
     assert daily.path == "Daily/2026-08-22.md"
     assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
+def test_complete_task_leaves_next_step_only_item_unchanged(tmp_path: Path) -> None:
+    """complete_task moves In Progress, Agent Queue, or TODO — not a Next Steps-only bullet."""
+    vault = make_vault(tmp_path)
+    written = vault.update_project_state(
+        "spring-auth",
+        objective="Ship consent",
+        next_steps=["Add characterization tests"],
+        now=STAMP,
+    )
+    path = vault.root / written.path
+    before = path.read_text(encoding="utf-8")
+    with pytest.raises(VaultError, match="No matching task"):
+        vault.complete_task("spring-auth", "characterization", now=STAMP)
+    assert path.read_text(encoding="utf-8") == before
+    assert "Add characterization tests" in before.split("## Next Steps", 1)[1]
+    assert "## Completed" not in before
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+    assert not (vault.root / "Daily").exists()
