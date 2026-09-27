@@ -1270,3 +1270,18 @@ def test_search_memory_finds_daily_note_phrase(tmp_path: Path) -> None:
     assert any(hit.path == "Daily/2026-08-22.md" for hit in hits)
     assert daily.path == "Daily/2026-08-22.md"
     assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
+def test_search_memory_returns_no_hits_for_tokenless_query(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    written = vault.update_project_state(
+        "spring-auth",
+        objective="Ship consent auto-approval",
+        now=STAMP,
+    )
+    state = vault.root / written.path
+    before = state.read_text(encoding="utf-8")
+    assert vault.search_memory("") == []
+    assert vault.search_memory("???") == []
+    assert state.read_text(encoding="utf-8") == before
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
