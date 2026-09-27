@@ -1270,3 +1270,31 @@ def test_search_memory_finds_daily_note_phrase(tmp_path: Path) -> None:
     assert any(hit.path == "Daily/2026-08-22.md" for hit in hits)
     assert daily.path == "Daily/2026-08-22.md"
     assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
+def test_append_daily_note_rejects_ambiguous_heading_without_writing(
+    tmp_path: Path,
+) -> None:
+    """A repeated heading is refused before the daily note is rewritten."""
+    vault = make_vault(tmp_path)
+    body = (
+        "## Usage\n"
+        "\n"
+        "7-day leftover burn plan: skip Halo.\n"
+        "\n"
+        "## Work\n"
+        "\n"
+        "other notes\n"
+        "\n"
+        "## Usage\n"
+        "\n"
+        "later usage notes\n"
+    )
+    path = vault.root / "Daily" / "2026-08-22.md"
+    path.parent.mkdir()
+    path.write_text(body, encoding="utf-8")
+    with pytest.raises(VaultError, match="Ambiguous heading match for 'Usage'"):
+        vault.append_daily_note("new usage item", heading="Usage", now=STAMP)
+    assert path.read_text(encoding="utf-8") == body
+    assert "new usage item" not in path.read_text(encoding="utf-8")
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
