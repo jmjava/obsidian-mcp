@@ -5,6 +5,7 @@ on:
   push:
     branches: [main]
 
+# Overlapping pushes (and PR updates) on the same ref cancel the older run.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
