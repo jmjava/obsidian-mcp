@@ -1270,3 +1270,36 @@ def test_search_memory_finds_daily_note_phrase(tmp_path: Path) -> None:
     assert any(hit.path == "Daily/2026-08-22.md" for hit in hits)
     assert daily.path == "Daily/2026-08-22.md"
     assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
+def test_search_memory_project_scope_keeps_top_level_daily_notes(tmp_path: Path) -> None:
+    """Project scope drops other projects and still returns a matching Daily note."""
+    vault = make_vault(tmp_path)
+    phrase = "consent-bypass-marker"
+    spring = vault.capture_work_session(
+        "spring-auth",
+        summary=f"Discussed {phrase} for clients",
+        now=STAMP,
+    )
+    other = vault.capture_work_session(
+        "other-app",
+        summary=f"Discussed {phrase} for billing",
+        now=STAMP,
+    )
+    daily_rel = "Daily/2026-08-22.md"
+    daily = vault.root / daily_rel
+    daily.parent.mkdir()
+    daily_body = f"# Daily\n\nMention {phrase} in the log\n"
+    daily.write_text(daily_body, encoding="utf-8")
+    spring_text = (vault.root / spring.path).read_text(encoding="utf-8")
+    other_text = (vault.root / other.path).read_text(encoding="utf-8")
+
+    scoped = vault.search_memory(phrase, project="spring-auth")
+    paths = [hit.path for hit in scoped]
+    assert spring.path in paths
+    assert daily_rel in paths
+    assert other.path not in paths
+    assert (vault.root / spring.path).read_text(encoding="utf-8") == spring_text
+    assert (vault.root / other.path).read_text(encoding="utf-8") == other_text
+    assert daily.read_text(encoding="utf-8") == daily_body
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
