@@ -12,6 +12,7 @@ import pytest
 from obsidian_dev_memory.server import (
     create_server,
     list_tool_names,
+    main,
     tool_append_daily_note,
     tool_block_task,
     tool_capture_work_session,
@@ -393,3 +394,34 @@ def test_install_project_writes_claude_config(tmp_path: Path) -> None:
     assert "get_project_context" in rule.read_text(encoding="utf-8")
     assert (project / ".cursor" / "mcp.json").is_file()
     assert (project / ".vscode" / "mcp.json").is_file()
+
+
+def test_main_exits_when_vault_is_missing_and_keeps_stdout_empty(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Startup fails closed before MCP stdio when the vault is unset or missing."""
+    monkeypatch.delenv("OBSIDIAN_VAULT_PATH", raising=False)
+    with pytest.raises(SystemExit) as missing_env:
+        main()
+    assert missing_env.value.code == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "OBSIDIAN_VAULT_PATH is required" in captured.err
+
+    monkeypatch.setenv("OBSIDIAN_VAULT_PATH", "   ")
+    with pytest.raises(SystemExit) as blank_env:
+        main()
+    assert blank_env.value.code == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "OBSIDIAN_VAULT_PATH is required" in captured.err
+
+    monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(tmp_path / "missing-vault"))
+    with pytest.raises(SystemExit) as missing_dir:
+        main()
+    assert missing_dir.value.code == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "Obsidian vault does not exist" in captured.err
