@@ -1270,3 +1270,25 @@ def test_search_memory_finds_daily_note_phrase(tmp_path: Path) -> None:
     assert any(hit.path == "Daily/2026-08-22.md" for hit in hits)
     assert daily.path == "Daily/2026-08-22.md"
     assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
+def test_search_memory_ignores_agent_queue_and_leaves_it_unchanged(
+    tmp_path: Path,
+) -> None:
+    """Agent Queue.md is outside the search index and is not rewritten."""
+    vault = make_vault(tmp_path)
+    vault.capture_work_session(
+        "spring-auth",
+        summary="Indexed session phrase stays searchable",
+        now=STAMP,
+    )
+    queue = vault.root / "AI Memory" / "Agent Queue.md"
+    body = "# Agent Queue\n\n- [ ] QUEUE-ONLY-PHRASE-z9 #agent\n"
+    queue.write_text(body, encoding="utf-8")
+    queue_hits = vault.search_memory("QUEUE-ONLY-PHRASE-z9")
+    assert queue_hits == []
+    assert queue.read_text(encoding="utf-8") == body
+    indexed = vault.search_memory("Indexed session phrase")
+    assert indexed
+    assert all(hit.path != "AI Memory/Agent Queue.md" for hit in indexed)
+    assert queue.read_text(encoding="utf-8") == body
