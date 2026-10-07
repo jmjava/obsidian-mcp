@@ -321,17 +321,16 @@ uv run pytest
 uv run ruff check src/ tests/
 ```
 
-Pull requests run the same `pytest` and `ruff` jobs in `.github/workflows/pytest.yml`.
-A redact, wipe, or claim regression fails CI.
+Pull requests run `pytest`, `ruff`, and `scripts/smoke-test.sh` in `.github/workflows/pytest.yml`.
+A second push to the same ref cancels the older run. A redact, wipe, claim, or foreign-server merge regression fails CI.
 
 A broader local check:
 
 ```bash
-export OBSIDIAN_VAULT_PATH="$HOME/Documents/ObsidianVault"
 ./scripts/smoke-test.sh
 ```
 
-The smoke test verifies the environment variable, vault directory, package import, server construction, and the pytest suite.
+With `OBSIDIAN_VAULT_PATH` unset, the smoke test uses a temporary directory and deletes it afterward. A path that is set but missing, such as `/tmp/missing`, fails and is not created. The script checks that `create_server` still registers the MCP tools, then runs pytest. Set `SMOKE_SKIP_PYTEST=1` to stop after the tool check.
 
 ## Troubleshooting
 

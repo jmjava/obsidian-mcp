@@ -16,6 +16,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- CI runs `scripts/smoke-test.sh` against a temporary vault. A missing vault path fails and is not created. The smoke check fails when `create_server` drops registered tools. The workflow cancels an older run on the same ref.
 - `list_open_tasks` includes top-level `TODO/*.md` notes with frontmatter `status: open` or unchecked items. `claim_task` / `complete_task` can match a unique TODO note without creating `Agent Queue.md`.
 - Optional task-queue tools: `list_open_tasks`, `list_blocked_tasks`, `claim_task`, `complete_task`, `block_task`, and `unblock_task`.
 - `claim_task` / `complete_task` check a unique matching `AI Memory/Agent Queue.md` checkbox in place.
