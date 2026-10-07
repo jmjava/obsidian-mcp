@@ -1,11 +1,25 @@
 #!/usr/bin/env bash
-# Validate local environment, imports, and the test suite.
+# Validate imports and MCP tool registration without requiring a real vault.
+# A missing OBSIDIAN_VAULT_PATH uses a temporary fixture. A set path that is
+# not a directory fails and is not created. Pytest still runs unless
+# SMOKE_SKIP_PYTEST=1 (CI runs the suite in the pytest job).
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$REPO_ROOT"
+
+SMOKE_TEMP_VAULT=""
+cleanup() {
+  if [[ -n "$SMOKE_TEMP_VAULT" && -d "$SMOKE_TEMP_VAULT" ]]; then
+    rm -rf "$SMOKE_TEMP_VAULT"
+  fi
+}
+trap cleanup EXIT
+
 if [[ -z "${OBSIDIAN_VAULT_PATH:-}" ]]; then
-  echo "OBSIDIAN_VAULT_PATH is required" >&2
-  echo "Example: export OBSIDIAN_VAULT_PATH=\"\$HOME/Documents/ObsidianVault\"" >&2
-  exit 1
+  SMOKE_TEMP_VAULT="$(mktemp -d)"
+  export OBSIDIAN_VAULT_PATH="$SMOKE_TEMP_VAULT"
 fi
 
 if [[ ! -d "$OBSIDIAN_VAULT_PATH" ]]; then
@@ -13,31 +27,39 @@ if [[ ! -d "$OBSIDIAN_VAULT_PATH" ]]; then
   exit 1
 fi
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-cd "$REPO_ROOT"
-
-if ! command -v uv >/dev/null 2>&1; then
-  echo "uv is required. Install it from https://docs.astral.sh/uv/" >&2
+if python -c "import obsidian_dev_memory" >/dev/null 2>&1; then
+  RUNNER="python"
+elif command -v uv >/dev/null 2>&1; then
+  RUNNER="uv"
+else
+  echo "python with obsidian_dev_memory, or uv, is required" >&2
   exit 1
 fi
 
+run_python() {
+  if [[ "$RUNNER" == "uv" ]]; then
+    uv run python "$@"
+  else
+    python "$@"
+  fi
+}
+
 echo "Vault: $OBSIDIAN_VAULT_PATH"
 echo "Importing Python package..."
-uv run python -c "import obsidian_dev_memory; print(obsidian_dev_memory.__version__)"
+run_python -c "import obsidian_dev_memory; print(obsidian_dev_memory.__version__)"
 
-echo "Importing MCP server module..."
-uv run python - <<'PY'
-from obsidian_dev_memory.server import create_server, list_tool_names
-from obsidian_dev_memory.vault import Vault
+echo "Checking MCP server tools..."
+run_python "$SCRIPT_DIR/smoke_server.py"
 
-vault = Vault.from_env()
-server = create_server(vault)
-names = list_tool_names(server)
-print("registered tools:", ", ".join(names) if names else "(discovered at runtime)")
-print("server import and construction succeeded")
-PY
+if [[ "${SMOKE_SKIP_PYTEST:-}" == "1" ]]; then
+  echo "Smoke test passed."
+  exit 0
+fi
 
 echo "Running tests..."
-uv run pytest
+if [[ "$RUNNER" == "uv" ]]; then
+  uv run pytest
+else
+  python -m pytest
+fi
 echo "Smoke test passed."

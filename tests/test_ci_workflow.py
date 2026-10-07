@@ -16,11 +16,29 @@ def test_ci_workflow_runs_ruff_and_pytest() -> None:
     assert "--fix" not in text
 
 
+def test_ci_workflow_cancels_older_pytest_run() -> None:
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "concurrency:" in text
+    assert "cancel-in-progress: true" in text
+    assert "github.ref" in text
+    assert "pytest tests/" in text
+
+
+def test_ci_workflow_runs_smoke_without_a_real_vault() -> None:
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "scripts/smoke-test.sh" in text
+    assert "SMOKE_SKIP_PYTEST" in text
+    assert "OBSIDIAN_VAULT_PATH:" not in text
+
+
 def test_ci_workflow_can_fail_redact_wipe_and_claim_tests() -> None:
     names = [
         "test_read_note_redacts_password_assignment",
         "test_update_project_state_partial_rewrite_keeps_custom_and_omitted_sections",
         "test_claim_task_rejects_ambiguous_queue_without_writing_state",
+        "test_merge_cli_keeps_foreign_mcp_server",
+        "test_claim_queue_only_item_fails_if_box_stays_open",
+        "test_complete_queue_only_item_fails_if_box_stays_open",
     ]
     collected = "\n".join(
         path.read_text(encoding="utf-8")
