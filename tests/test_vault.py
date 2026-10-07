@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -119,6 +120,52 @@ def test_appends_session(tmp_path: Path) -> None:
     assert "### Open Questions" not in text
     assert "Implemented OAuth consent auto approval" in text
     assert "Added tests" in text
+
+
+def test_capture_work_session_records_git_snapshot_without_file_contents(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "sample-repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.email", "dev@example.com"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Dev"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    (repo / "README.md").write_text("hello\n", encoding="utf-8")
+    subprocess.run(["git", "add", "README.md"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "initial"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    marker = "DIFF-BODY-MARKER-not-for-the-session"
+    (repo / "notes.txt").write_text(f"{marker}\n", encoding="utf-8")
+
+    vault = make_vault(tmp_path)
+    result = vault.capture_work_session(
+        "spring-auth",
+        summary="Captured a snapshot",
+        repository_path=str(repo),
+        now=STAMP,
+    )
+    text = (vault.root / result.path).read_text(encoding="utf-8")
+    assert "### Git" in text
+    assert "- Repository: sample-repo" in text
+    assert "- Branch: " in text
+    assert "- Commit: " in text
+    assert "- Dirty: yes" in text
+    assert "- Changed files: notes.txt" in text
+    assert marker not in text
 
 
 def test_writes_decision_and_avoids_overwrite(tmp_path: Path) -> None:
