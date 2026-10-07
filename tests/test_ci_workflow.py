@@ -16,6 +16,15 @@ def test_ci_workflow_runs_ruff_and_pytest() -> None:
     assert "--fix" not in text
 
 
+def test_ci_workflow_cancels_older_runs_on_the_same_ref() -> None:
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "concurrency:" in text
+    assert "group: ${{ github.workflow }}-${{ github.ref }}" in text
+    assert "cancel-in-progress: true" in text
+    assert "pytest tests/" in text
+    assert "name: Test" in text
+
+
 def test_ci_workflow_can_fail_redact_wipe_and_claim_tests() -> None:
     names = [
         "test_read_note_redacts_password_assignment",
