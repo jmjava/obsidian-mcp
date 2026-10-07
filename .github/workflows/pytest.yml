@@ -70,3 +70,43 @@ jobs:
         run: python -m pip install -e ".[dev]"
       - name: Test
         run: pytest tests/ -q --tb=short
+
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Missing vault path fails closed
+        run: |
+          set -euo pipefail
+          expect_fail() {
+            local status=0
+            "$@" || status=$?
+            if [[ "$status" -eq 0 ]]; then
+              echo "smoke-test.sh passed without a vault; expected a failure" >&2
+              exit 1
+            fi
+          }
+          expect_fail env -u OBSIDIAN_VAULT_PATH ./scripts/smoke-test.sh
+          expect_fail env OBSIDIAN_VAULT_PATH="/tmp/obsidian-smoke-missing-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" ./scripts/smoke-test.sh
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v5
+      - name: Smoke test against a temporary fixture vault
+        run: |
+          set -euo pipefail
+          unset OBSIDIAN_VAULT_PATH
+          fixture="$(mktemp -d /tmp/obsidian-smoke-fixture.XXXXXX)"
+          case "$fixture" in
+            "$HOME"|"$HOME"/*)
+              echo "refusing to point smoke CI at a home vault: $fixture" >&2
+              exit 1
+              ;;
+          esac
+          if [[ ! -d "$fixture" ]]; then
+            echo "fixture vault was not created: $fixture" >&2
+            exit 1
+          fi
+          printf '%s\n' 'CI fixture vault. Not an operator vault.' > "$fixture/README.md"
+          export OBSIDIAN_VAULT_PATH="$fixture"
+          ./scripts/smoke-test.sh

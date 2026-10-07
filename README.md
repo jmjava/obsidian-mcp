@@ -321,13 +321,15 @@ uv run pytest
 uv run ruff check src/ tests/
 ```
 
-Pull requests run the same `pytest` and `ruff` jobs in `.github/workflows/pytest.yml`.
+Pull requests run `pytest`, `ruff`, and `scripts/smoke-test.sh` in `.github/workflows/pytest.yml`.
 A redact, wipe, or claim regression fails CI.
+
+The smoke job creates a temporary fixture directory and sets `OBSIDIAN_VAULT_PATH` to that path. It does not use a home vault. An unset path, or a path that is not a directory, fails the job.
 
 A broader local check:
 
 ```bash
-export OBSIDIAN_VAULT_PATH="$HOME/Documents/ObsidianVault"
+export OBSIDIAN_VAULT_PATH="$(mktemp -d)"
 ./scripts/smoke-test.sh
 ```
 
