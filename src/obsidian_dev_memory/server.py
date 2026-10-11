@@ -8,6 +8,7 @@ import sys
 from collections.abc import Sequence
 from typing import Any
 
+from obsidian_dev_memory.quality_pool import quality_pool_flow as quality_pool_contract
 from obsidian_dev_memory.vault import Vault, VaultError
 
 logger = logging.getLogger("obsidian_dev_memory")
@@ -23,6 +24,11 @@ generic description instead of the literal value.
 Prefer updating existing project memory rather than creating duplicate notes.
 Call get_project_context before substantial work. Do not record typo fixes,
 formatting-only changes, or one-line mechanical edits.
+
+Call quality_pool_flow before a quality-pool seat. The pool stays at 7 and
+refills when a seat exits. A commit is done only when every reported workflow
+check is success. Pending is not a pass. A failing check still blocks merge
+when branch protection does not require it.
 """.strip()
 
 
@@ -274,6 +280,16 @@ def create_server(vault: Vault | None = None) -> Any:
             date=date,
         ).to_dict()
 
+    @mcp.tool()
+    def quality_pool_flow() -> dict[str, Any]:
+        """Return the quality-pool contract: cap, selection, and workflow gate.
+
+        Does not read or write the vault. Held pull requests stay in the
+        current pool note. A commit is done only when every reported check
+        is success. Pending is not a pass.
+        """
+        return quality_pool_contract()
+
     return mcp
 
 
@@ -282,23 +298,37 @@ def list_tool_names(server: Any) -> list[str]:
     return _extract_tool_names(server)
 
 
-def _extract_tool_names(server: Any) -> list[str]:
-    manager = getattr(server, "_tool_manager", None)
-    if manager is not None and hasattr(manager, "list_tools"):
+def _fastmcp_tool_names(manager: Any) -> list[str] | None:
+    if manager is None or not hasattr(manager, "list_tools"):
+        return None
+    listed = manager.list_tools()
+    if not listed or inspect.isawaitable(listed):
+        return None
+    return [getattr(item, "name", str(item)) for item in listed]
+
+
+def _attr_tool_names(manager: Any) -> list[str] | None:
+    if manager is None:
+        return None
+    if hasattr(manager, "list_tools"):
         listed = manager.list_tools()
-        if listed and not inspect.isawaitable(listed):
-            return [getattr(item, "name", str(item)) for item in listed]
+        return [getattr(item, "name", str(item)) for item in listed]
+    tools = getattr(manager, "_tools", None)
+    if isinstance(tools, dict):
+        return list(tools)
+    if isinstance(manager, dict):
+        return list(manager)
+    return None
+
+
+def _extract_tool_names(server: Any) -> list[str]:
+    names = _fastmcp_tool_names(getattr(server, "_tool_manager", None))
+    if names is not None:
+        return names
     for attr in ("_tools", "tools"):
-        manager = getattr(server, attr, None)
-        if manager is None:
-            continue
-        if hasattr(manager, "list_tools"):
-            listed = manager.list_tools()
-            return [getattr(item, "name", str(item)) for item in listed]
-        if hasattr(manager, "_tools") and isinstance(manager._tools, dict):
-            return list(manager._tools.keys())
-        if isinstance(manager, dict):
-            return list(manager.keys())
+        names = _attr_tool_names(getattr(server, attr, None))
+        if names is not None:
+            return names
     return []
 
 

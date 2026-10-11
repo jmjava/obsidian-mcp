@@ -259,6 +259,7 @@ It fails clearly when the target project or vault is missing, and it merges MCP 
 | `search_memory` | Local filename and text search over project memory, top-level `TODO/*.md`, and `Daily/*.md` |
 | `read_note` | Read one vault-relative Markdown file |
 | `append_daily_note` | Append to `Daily/YYYY-MM-DD.md`; same-title headings must be unique |
+| `quality_pool_flow` | Return the quality-pool contract: cap 7, selection order, and the workflow gate |
 
 `get_project_context` returns empty sections when a project is new instead of failing.
 
