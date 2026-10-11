@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Added
+
+- `quality_pool_flow` returns the quality-pool contract: stay at 7 seats, refill when a seat exits, pick a green open pull request before a missing maintainability technique, and treat a commit as done only when every reported workflow check is success. Pending is not a pass. A failing check still blocks merge when branch protection does not require it. The tool does not read or write the vault.
+
 ### Fixed
 
 - `search_memory` indexes top-level `TODO/*.md` and `Daily/*.md` in addition to `AI Memory/Projects/**`. A search for a TODO title finds that note. Nested `TODO/finished/` is not scanned. The tool does not invent `Agent Queue.md`.

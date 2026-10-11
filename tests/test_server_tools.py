@@ -43,6 +43,7 @@ EXPECTED_TOOLS = {
     "complete_task",
     "block_task",
     "unblock_task",
+    "quality_pool_flow",
 }
 
 

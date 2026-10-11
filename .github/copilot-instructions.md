@@ -52,6 +52,10 @@ When claiming, blocking, unblocking, or finishing a Next Steps, Agent Queue, or 
 
 Use `append_daily_note` for short useful items on today's vault daily note. Do not overwrite existing daily-note contents.
 
+## Quality pool
+
+Call `quality_pool_flow` before a quality-pool seat. The pool stays at 7 and refills when a seat exits. A commit is done only when every reported workflow check is success. Pending is not a pass. A failing check still blocks merge when branch protection does not require it.
+
 ## Never store secrets
 
 Never persist passwords, API keys, access tokens, refresh tokens, JWT values, private keys, `.env` contents, database credentials, production secrets, or sensitive customer data.
