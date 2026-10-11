@@ -1315,3 +1315,32 @@ def test_search_memory_ignores_agent_queue_and_leaves_it_unchanged(
     assert indexed
     assert all(hit.path != "AI Memory/Agent Queue.md" for hit in indexed)
     assert queue.read_text(encoding="utf-8") == body
+
+
+def test_search_memory_project_scope_omits_other_project_notes(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    phrase = "consent-bypass-token"
+    spring = vault.capture_work_session(
+        "spring-auth",
+        summary=f"Discussed {phrase} for first-party clients",
+        now=STAMP,
+    )
+    other = vault.capture_work_session(
+        "other-app",
+        summary=f"Discussed {phrase} for billing",
+        now=STAMP,
+    )
+    spring_text = (vault.root / spring.path).read_text(encoding="utf-8")
+    other_text = (vault.root / other.path).read_text(encoding="utf-8")
+
+    scoped = vault.search_memory(phrase, project="spring-auth")
+    assert [hit.path for hit in scoped] == [spring.path]
+    assert phrase in scoped[0].matching_excerpt
+    assert other.path not in [hit.path for hit in scoped]
+
+    unscoped = vault.search_memory(phrase)
+    assert {hit.path for hit in unscoped} == {spring.path, other.path}
+
+    assert (vault.root / spring.path).read_text(encoding="utf-8") == spring_text
+    assert (vault.root / other.path).read_text(encoding="utf-8") == other_text
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
