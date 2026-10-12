@@ -126,30 +126,48 @@ class Vault:
 
     def safe_path(self, *parts: str) -> Path:
         """Resolve a vault-relative path and reject traversal or symlink escapes."""
+        raw = self._relative_note_path(parts)
+        current = self._walk_contained_parts(raw)
+        return self._finish_contained_path(current)
+
+    def _relative_note_path(self, parts: tuple[str, ...]) -> Path:
         if not parts:
             raise VaultPathError("A vault-relative path is required")
         raw = Path(*[str(part) for part in parts])
+        self._reject_unsafe_relative_path(raw)
+        return raw
+
+    def _reject_unsafe_relative_path(self, raw: Path) -> None:
         if raw.is_absolute() or raw.as_posix().startswith("~"):
             raise VaultPathError("Absolute paths are not allowed as note paths")
-        if any(part in {"..", ""} or part.startswith("..") for part in raw.parts):
+        if self._has_traversal_part(raw):
             raise VaultPathError("Path traversal is not allowed")
         if "\x00" in raw.as_posix():
             raise VaultPathError("Invalid path")
 
+    def _has_traversal_part(self, raw: Path) -> bool:
+        return any(part in {"..", ""} or part.startswith("..") for part in raw.parts)
+
+    def _walk_contained_parts(self, raw: Path) -> Path:
         current = self.root
         for part in raw.parts:
             current = current / part
-            if current.exists() or current.is_symlink():
-                resolved = current.resolve()
-                if not self._contained(resolved):
-                    raise VaultPathError("Resolved path escapes the vault")
+            self._reject_resolved_escape(current)
+        return current
 
+    def _reject_resolved_escape(self, current: Path) -> None:
+        if not (current.exists() or current.is_symlink()):
+            return
+        resolved = current.resolve()
+        if not self._contained(resolved):
+            raise VaultPathError("Resolved path escapes the vault")
+
+    def _finish_contained_path(self, current: Path) -> Path:
         if current.exists() or current.is_symlink():
             resolved = current.resolve()
             if not self._contained(resolved):
                 raise VaultPathError("Resolved path escapes the vault")
             return resolved
-
         parent = current.parent.resolve()
         if not self._contained(parent):
             raise VaultPathError("Resolved path escapes the vault")
@@ -340,41 +358,66 @@ class Vault:
         slug = self.project_slug(project)
         tasks: list[OpenTask] = []
         seen: set[str] = set()
-
-        state_path = self.project_state_path(project)
-        if state_path.exists() and state_path.is_file():
-            parsed = parse_project_state(self._read_text(state_path))
-            rel = self.relative_path(state_path)
-            for item in parsed["next_steps"]:
-                text = redact_secrets(str(item))
-                key = normalize_task_text(text)
-                if not key or key in seen:
-                    continue
-                seen.add(key)
-                tasks.append(OpenTask(text=text, source="next_steps", path=rel))
-
+        self._append_next_step_tasks(project, tasks, seen)
         if include_agent_queue:
-            queue_path = self.agent_queue_path()
-            if queue_path.exists() and queue_path.is_file():
-                rel = self.relative_path(queue_path)
-                for item in parse_open_checkboxes(self._read_text(queue_path)):
-                    text = redact_secrets(item)
-                    key = normalize_task_text(text)
-                    if not key or key in seen:
-                        continue
-                    seen.add(key)
-                    tasks.append(OpenTask(text=text, source="agent_queue", path=rel))
+            self._append_agent_queue_tasks(tasks, seen)
+        self._append_todo_open_tasks(slug, tasks, seen)
+        return OpenTaskList(project=slug, tasks=tasks)
 
+    def _append_next_step_tasks(
+        self,
+        project: str,
+        tasks: list[OpenTask],
+        seen: set[str],
+    ) -> None:
+        state_path = self.project_state_path(project)
+        if not (state_path.exists() and state_path.is_file()):
+            return
+        parsed = parse_project_state(self._read_text(state_path))
+        rel = self.relative_path(state_path)
+        for item in parsed["next_steps"]:
+            text = redact_secrets(str(item))
+            self._append_open_task(tasks, seen, text, "next_steps", rel)
+
+    def _append_agent_queue_tasks(self, tasks: list[OpenTask], seen: set[str]) -> None:
+        queue_path = self.agent_queue_path()
+        if not (queue_path.exists() and queue_path.is_file()):
+            return
+        rel = self.relative_path(queue_path)
+        for item in parse_open_checkboxes(self._read_text(queue_path)):
+            text = redact_secrets(item)
+            self._append_open_task(tasks, seen, text, "agent_queue", rel)
+
+    def _append_todo_open_tasks(
+        self,
+        slug: str,
+        tasks: list[OpenTask],
+        seen: set[str],
+    ) -> None:
         for match in self._collect_todo_items(slug, note_statuses=_TODO_CLAIM_NOTE_STATUSES):
             text = redact_secrets(match.text)
-            key = normalize_task_text(text)
-            if not key or key in seen:
-                continue
-            seen.add(key)
             source = "todo" if match.kind == "note" else "todo_item"
-            tasks.append(OpenTask(text=text, source=source, path=self.relative_path(match.path)))
+            self._append_open_task(
+                tasks,
+                seen,
+                text,
+                source,
+                self.relative_path(match.path),
+            )
 
-        return OpenTaskList(project=slug, tasks=tasks)
+    def _append_open_task(
+        self,
+        tasks: list[OpenTask],
+        seen: set[str],
+        text: str,
+        source: str,
+        path: str,
+    ) -> None:
+        key = normalize_task_text(text)
+        if not key or key in seen:
+            return
+        seen.add(key)
+        tasks.append(OpenTask(text=text, source=source, path=path))
 
     def list_blocked_tasks(self, project: str) -> OpenTaskList:
         slug = self.project_slug(project)
@@ -987,44 +1030,73 @@ class Vault:
         return documents
 
     def _iter_memory_files(self, project: str | None) -> list[Path]:
-        if project:
-            slug = self.project_slug(project)
-            roots = [
-                self.safe_path(self.memory_root, "Projects", slug, "Project State.md"),
-                self.safe_path(self.memory_root, "Projects", slug, "Sessions"),
-                self.safe_path(self.memory_root, "Projects", slug, "Decisions"),
-            ]
-        else:
-            slug = None
-            roots = [self.safe_path(self.memory_root, "Projects")]
+        slug, roots = self._memory_file_roots(project)
         files: list[Path] = []
         seen: set[Path] = set()
+        self._collect_markdown_roots(roots, files, seen)
+        self._collect_todo_memory_files(slug, files, seen)
+        self._collect_daily_memory_files(files, seen)
+        return files
 
-        def add(path: Path) -> None:
-            resolved = path.resolve()
-            if resolved in seen:
-                return
-            if path.is_file() and path.suffix.lower() == ".md" and self._contained(resolved):
-                seen.add(resolved)
-                files.append(path)
+    def _memory_file_roots(self, project: str | None) -> tuple[str | None, list[Path]]:
+        if not project:
+            return None, [self.safe_path(self.memory_root, "Projects")]
+        slug = self.project_slug(project)
+        roots = [
+            self.safe_path(self.memory_root, "Projects", slug, "Project State.md"),
+            self.safe_path(self.memory_root, "Projects", slug, "Sessions"),
+            self.safe_path(self.memory_root, "Projects", slug, "Decisions"),
+        ]
+        return slug, roots
 
+    def _remember_markdown_file(
+        self,
+        path: Path,
+        files: list[Path],
+        seen: set[Path],
+    ) -> None:
+        resolved = path.resolve()
+        if resolved in seen:
+            return
+        if path.is_file() and path.suffix.lower() == ".md" and self._contained(resolved):
+            seen.add(resolved)
+            files.append(path)
+
+    def _collect_markdown_roots(
+        self,
+        roots: list[Path],
+        files: list[Path],
+        seen: set[Path],
+    ) -> None:
         for root in roots:
             if root.is_file() and root.suffix.lower() == ".md":
-                add(root)
+                self._remember_markdown_file(root, files, seen)
                 continue
             if not root.exists() or not root.is_dir():
                 continue
             for path in root.rglob("*.md"):
-                add(path)
+                self._remember_markdown_file(path, files, seen)
+
+    def _collect_todo_memory_files(
+        self,
+        slug: str | None,
+        files: list[Path],
+        seen: set[Path],
+    ) -> None:
         for path in self._iter_todo_notes():
-            if slug is not None:
-                fields = parse_frontmatter_fields(self._read_text(path))
-                if not self._todo_belongs_to_project(fields, slug):
-                    continue
-            add(path)
+            if self._todo_note_outside_project(path, slug):
+                continue
+            self._remember_markdown_file(path, files, seen)
+
+    def _todo_note_outside_project(self, path: Path, slug: str | None) -> bool:
+        if slug is None:
+            return False
+        fields = parse_frontmatter_fields(self._read_text(path))
+        return not self._todo_belongs_to_project(fields, slug)
+
+    def _collect_daily_memory_files(self, files: list[Path], seen: set[Path]) -> None:
         for path in self._iter_daily_notes():
-            add(path)
-        return files
+            self._remember_markdown_file(path, files, seen)
 
     def _render_session_entry(
         self,
