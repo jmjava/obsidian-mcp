@@ -325,6 +325,8 @@ uv run ruff check src/ tests/
 Pull requests run `pytest`, `ruff`, and `scripts/smoke-test.sh` in `.github/workflows/pytest.yml`.
 A second push to the same ref cancels the older run. A redact, wipe, claim, or foreign-server merge regression fails CI.
 
+The smoke job creates a temporary fixture directory and sets `OBSIDIAN_VAULT_PATH` to that path. It does not use a home vault. A path that is set but is not a directory fails the job.
+
 A broader local check:
 
 ```bash
