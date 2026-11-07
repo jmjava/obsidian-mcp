@@ -163,6 +163,22 @@ def _kept_blocked(
     return [str(item) for item in parsed]
 
 
+def _frontmatter_has_project_key(note: str | None) -> bool:
+    """True when frontmatter names project, even if the value is not a scalar."""
+    if not note:
+        return False
+    lines = note.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return False
+    for line in lines[1:]:
+        if line.strip() == "---":
+            return False
+        key, separator, _value = line.partition(":")
+        if separator and key.strip().lower() == "project":
+            return True
+    return False
+
+
 def _without_matched_task(items: Sequence[str], task: str) -> list[str]:
     """Drop open copies of a task that has been completed."""
     needle = normalize_task_text(task)
@@ -1001,10 +1017,15 @@ class Vault:
                 files.append(resolved)
         return files
 
-    def _todo_belongs_to_project(self, fields: dict[str, str], project_slug: str) -> bool:
+    def _todo_belongs_to_project(
+        self,
+        fields: dict[str, str],
+        project_slug: str,
+        note: str | None = None,
+    ) -> bool:
         raw = fields.get("project", "").strip()
         if not raw:
-            return True
+            return not _frontmatter_has_project_key(note)
         try:
             return slugify(raw) == project_slug
         except ValueError:
@@ -1021,7 +1042,7 @@ class Vault:
         for path in self._iter_todo_notes():
             text = self._read_text(path)
             fields = parse_frontmatter_fields(text)
-            if not self._todo_belongs_to_project(fields, slug):
+            if not self._todo_belongs_to_project(fields, slug, text):
                 continue
             for entry_text, kind in parse_open_todo_entries(
                 text,
@@ -1281,8 +1302,9 @@ class Vault:
     def _todo_note_outside_project(self, path: Path, slug: str | None) -> bool:
         if slug is None:
             return False
-        fields = parse_frontmatter_fields(self._read_text(path))
-        return not self._todo_belongs_to_project(fields, slug)
+        text = self._read_text(path)
+        fields = parse_frontmatter_fields(text)
+        return not self._todo_belongs_to_project(fields, slug, text)
 
     def _collect_daily_memory_files(self, files: list[Path], seen: set[Path]) -> None:
         for path in self._iter_daily_notes():
