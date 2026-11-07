@@ -179,6 +179,66 @@ def _frontmatter_has_project_key(note: str | None) -> bool:
     return False
 
 
+def _is_frontmatter_status(line: str) -> bool:
+    """True for a top-level frontmatter status key."""
+    if not line or line[0] in {" ", "\t", "-"}:
+        return False
+    key, separator, _value = line.partition(":")
+    return bool(separator) and key.strip().lower() == "status"
+
+
+def _frontmatter_lines(note: str) -> list[str] | None:
+    """Return the opening frontmatter lines, including the closing marker."""
+    lines = note.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return None
+    collected = [lines[0]]
+    for line in lines[1:]:
+        collected.append(line)
+        if line.strip() == "---":
+            return collected
+    return None
+
+
+def _replace_status_lines(lines: list[str], rendered: str) -> list[str] | None:
+    """Replace each frontmatter status line. Return None when nothing changes."""
+    changed = False
+    updated: list[str] = []
+    for line in lines:
+        if _is_frontmatter_status(line) and line != rendered:
+            updated.append(rendered)
+            changed = True
+            continue
+        updated.append(line)
+    if not changed:
+        return None
+    return updated
+
+
+def _with_frontmatter_lines(note: str, front_lines: list[str]) -> str:
+    rest = note.splitlines()[len(front_lines) :]
+    text = "\n".join([*front_lines, *rest])
+    if note.endswith("\n"):
+        text += "\n"
+    return text
+
+
+def _clear_duplicate_status(note: str, status: str) -> str:
+    """Set every frontmatter status so a later field cannot stay open."""
+    front = _frontmatter_lines(note)
+    if front is None:
+        return note
+    replaced = _replace_status_lines(front, f"status: {status}")
+    if replaced is None:
+        return note
+    return _with_frontmatter_lines(note, replaced)
+
+
+def _set_note_status(note: str, status: str) -> str:
+    """Update a TODO status, including a duplicate later status field."""
+    return _clear_duplicate_status(set_frontmatter_field(note, "status", status), status)
+
+
 def _without_matched_task(items: Sequence[str], task: str) -> list[str]:
     """Drop open copies of a task that has been completed."""
     needle = normalize_task_text(task)
@@ -1098,7 +1158,7 @@ class Vault:
             except TaskMatchError:
                 return "", None
         else:
-            updated = set_frontmatter_field(existing, "status", status)
+            updated = _set_note_status(existing, status)
         if updated == existing:
             return "", None
         return self.relative_path(match.path), updated

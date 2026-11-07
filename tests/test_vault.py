@@ -1587,6 +1587,26 @@ def test_complete_task_from_todo_only_item(tmp_path: Path) -> None:
     assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
 
 
+def test_complete_task_clears_a_later_open_status(tmp_path: Path) -> None:
+    """A later status field must not keep a completed TODO on the open list."""
+    vault = make_vault(tmp_path)
+    note = vault.root / "TODO" / "2026-09-10-docs.md"
+    note.parent.mkdir()
+    note.write_text(
+        "---\nstatus: open\nstatus: open\nproject: spring-auth\n---\n\n# Write docs\n",
+        encoding="utf-8",
+    )
+    done = vault.complete_task("spring-auth", "Write docs", now=STAMP)
+    assert done.todo_updated is True
+    stored = note.read_text(encoding="utf-8")
+    assert "status: open" not in stored
+    assert stored.count("status: done") == 2
+    assert "project: spring-auth" in stored
+    assert "# Write docs" in stored
+    assert [item.text for item in vault.list_open_tasks("spring-auth").tasks] == []
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
 def test_list_open_tasks_redacts_todo_secrets_without_rewriting(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     raw = (
