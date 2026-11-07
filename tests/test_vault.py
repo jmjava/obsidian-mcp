@@ -214,6 +214,41 @@ def test_read_note_redacts_password_assignment(tmp_path: Path) -> None:
     assert path.read_text(encoding="utf-8") == raw
 
 
+def test_bearer_value_after_authorization_label_is_not_stored_or_returned(
+    tmp_path: Path,
+) -> None:
+    """A Bearer token after an Authorization label must not survive redaction."""
+    vault = make_vault(tmp_path)
+    token = "BearerTokenValue1234567890"
+    line = f"Authorization: Bearer {token}"
+    written = vault.record_decision(
+        "spring-auth",
+        title="Rotate access",
+        context=line,
+        decision="Stop logging the header",
+        now=STAMP,
+    )
+    disk = (vault.root / written.path).read_text(encoding="utf-8")
+    assert token not in disk
+    assert SECRET_PLACEHOLDER in disk
+
+    rel = "AI Memory/Projects/spring-auth/Sessions/2026-08-22.md"
+    raw_path = vault.root / rel
+    raw_body = f"# Session\n\n{line}\n"
+    raw_path.write_text(raw_body, encoding="utf-8")
+    note = vault.read_note(rel)
+    assert token not in note["content"]
+    assert SECRET_PLACEHOLDER in note["content"]
+    assert raw_path.read_text(encoding="utf-8") == raw_body
+
+    hits = vault.search_memory("Authorization", project="spring-auth")
+    assert hits
+    for hit in hits:
+        assert token not in hit.matching_excerpt
+        assert token not in hit.title
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
 def test_search_memory_excerpt_redacts_password_assignment(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     vault.ensure_project("spring-auth")

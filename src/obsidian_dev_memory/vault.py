@@ -15,6 +15,7 @@ from typing import NamedTuple
 
 from obsidian_dev_memory.git_context import collect_git_context
 from obsidian_dev_memory.markdown import (
+    SECRET_PLACEHOLDER,
     HeadingMatchError,
     TaskMatchError,
     append_under_heading,
@@ -75,6 +76,39 @@ class _QueueSync(NamedTuple):
     status: str
 
 
+# Run before the labeled-assignment redactor, which keeps only the word Bearer.
+_BEARER_VALUE_RE = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._\-+=/]{16,}")
+
+
+def _shield_bearer_value(text: str) -> str:
+    """Replace a Bearer token so a later assignment pattern cannot leave it."""
+    return _BEARER_VALUE_RE.sub(SECRET_PLACEHOLDER, text)
+
+
+def _public_text(text: str) -> str:
+    return redact_secrets(_shield_bearer_value(text))
+
+
+def _shield_text(text: str | None) -> str | None:
+    if text is None:
+        return None
+    return _shield_bearer_value(text)
+
+
+def _shield_sequence(items: Sequence[str] | None) -> Sequence[str] | None:
+    if not items:
+        return items
+    return [_shield_bearer_value(str(item)) for item in items]
+
+
+def _shield_extras(
+    sections: Sequence[tuple[str, str]] | None,
+) -> Sequence[tuple[str, str]] | None:
+    if not sections:
+        return sections
+    return [(title, _shield_bearer_value(str(body))) for title, body in sections]
+
+
 class VaultError(Exception):
     """Base error for vault operations.
 
@@ -85,7 +119,7 @@ class VaultError(Exception):
     def __init__(self, message: object = "", *args: object) -> None:
         parts = (message, *args)
         redacted = tuple(
-            redact_secrets(part) if isinstance(part, str) else part for part in parts
+            _public_text(part) if isinstance(part, str) else part for part in parts
         )
         super().__init__(*redacted)
 
@@ -288,13 +322,13 @@ class Vault:
                     "tags": ["architecture", "decision"],
                 }
             ),
-            f"# {redact_secrets(title.strip())}",
-            section("Context", context),
-            section("Decision", decision),
-            section("Rationale", rationale),
-            section("Consequences", consequences),
-            section("Alternatives Considered", alternatives),
-            section("Related Files", related_files),
+            f"# {_public_text(title.strip())}",
+            section("Context", _shield_bearer_value(context)),
+            section("Decision", _shield_bearer_value(decision)),
+            section("Rationale", _shield_bearer_value(rationale)),
+            section("Consequences", _shield_sequence(consequences)),
+            section("Alternatives Considered", _shield_sequence(alternatives)),
+            section("Related Files", _shield_sequence(related_files)),
         )
         self._atomic_write(path, body)
         message = "Recorded decision"
@@ -337,16 +371,16 @@ class Vault:
             "# Project State",
             *patch_project_state_sections(
                 existing,
-                objective=objective,
-                current_state=current_state,
-                architecture=architecture,
-                completed=completed,
-                in_progress=in_progress,
-                blocked=blocked,
-                next_steps=next_steps,
-                important_files=important_files,
-                notes=notes,
-                extra_sections=extra_sections,
+                objective=_shield_text(objective),
+                current_state=_shield_text(current_state),
+                architecture=_shield_sequence(architecture),
+                completed=_shield_sequence(completed),
+                in_progress=_shield_sequence(in_progress),
+                blocked=_shield_sequence(blocked),
+                next_steps=_shield_sequence(next_steps),
+                important_files=_shield_sequence(important_files),
+                notes=_shield_sequence(notes),
+                extra_sections=_shield_extras(extra_sections),
             ),
         )
         self._atomic_write(path, body)
@@ -385,7 +419,7 @@ class Vault:
         parsed = parse_project_state(self._read_text(state_path))
         rel = self.relative_path(state_path)
         for item in parsed["next_steps"]:
-            text = redact_secrets(str(item))
+            text = _public_text(str(item))
             self._append_open_task(tasks, seen, text, "next_steps", rel)
 
     def _append_agent_queue_tasks(self, tasks: list[OpenTask], seen: set[str]) -> None:
@@ -394,7 +428,7 @@ class Vault:
             return
         rel = self.relative_path(queue_path)
         for item in parse_open_checkboxes(self._read_text(queue_path)):
-            text = redact_secrets(item)
+            text = _public_text(item)
             self._append_open_task(tasks, seen, text, "agent_queue", rel)
 
     def _append_todo_open_tasks(
@@ -404,7 +438,7 @@ class Vault:
         seen: set[str],
     ) -> None:
         for match in self._collect_todo_items(slug, note_statuses=_TODO_CLAIM_NOTE_STATUSES):
-            text = redact_secrets(match.text)
+            text = _public_text(match.text)
             source = "todo" if match.kind == "note" else "todo_item"
             self._append_open_task(
                 tasks,
@@ -438,7 +472,7 @@ class Vault:
             parsed = parse_project_state(self._read_text(state_path))
             rel = self.relative_path(state_path)
             for item in parsed["blocked"]:
-                text = redact_secrets(str(item))
+                text = _public_text(str(item))
                 key = normalize_task_text(text)
                 if not key or key in seen:
                     continue
@@ -806,7 +840,7 @@ class Vault:
             path=written.path,
             created=written.created,
             message=message,
-            task=redact_secrets(matched),
+            task=_public_text(matched),
             from_section=from_section,
             to_section=to_section,
             queue_updated=queue_updated,
@@ -952,8 +986,8 @@ class Vault:
             hits.append(
                 SearchHit(
                     path=rel,
-                    title=redact_secrets(extract_title(text, path.stem)),
-                    matching_excerpt=redact_secrets(
+                    title=_public_text(extract_title(text, path.stem)),
+                    matching_excerpt=_public_text(
                         excerpt_around(text, terms, limit=DEFAULT_EXCERPT_LIMIT)
                     ),
                     score=score,
@@ -966,7 +1000,7 @@ class Vault:
         target = self._markdown_note(path)
         return {
             "path": self.relative_path(target),
-            "content": redact_secrets(self._read_text(target)),
+            "content": _public_text(self._read_text(target)),
         }
 
     def _markdown_note(self, path: str) -> Path:
@@ -999,7 +1033,11 @@ class Vault:
             existing = self._read_text(path) if path.exists() else ""
             created = not path.exists()
             try:
-                updated = append_under_heading(existing, content, heading)
+                updated = append_under_heading(
+                    existing,
+                    _shield_bearer_value(content),
+                    heading,
+                )
             except HeadingMatchError as exc:
                 raise VaultError(str(exc)) from exc
             self._atomic_write(path, updated)
@@ -1044,7 +1082,7 @@ class Vault:
             documents.append(
                 MemoryDocument(
                     path=self.relative_path(path),
-                    title=redact_secrets(extract_title(text, path.stem)),
+                    title=_public_text(extract_title(text, path.stem)),
                     content=self._compact(text),
                 )
             )
@@ -1152,16 +1190,16 @@ class Vault:
                 git_lines.append("Changed files: " + ", ".join(git_info.changed_files))
         return join_blocks(
             f"## {format_heading_time(now)}",
-            section("Summary", summary, level=3),
+            section("Summary", _shield_bearer_value(summary), level=3),
             section("Git", git_lines or None, level=3),
-            section("Changes", changes, level=3),
-            section("Decisions", decisions, level=3),
-            section("Open Questions", open_questions, level=3),
-            section("Next Steps", next_steps, level=3),
+            section("Changes", _shield_sequence(changes), level=3),
+            section("Decisions", _shield_sequence(decisions), level=3),
+            section("Open Questions", _shield_sequence(open_questions), level=3),
+            section("Next Steps", _shield_sequence(next_steps), level=3),
         ).rstrip()
 
     def _compact(self, text: str) -> str:
-        text = redact_secrets(text)
+        text = _public_text(text)
         if len(text) <= DEFAULT_CONTEXT_LIMIT:
             return text
         return text[: DEFAULT_CONTEXT_LIMIT].rstrip() + "\n..."
