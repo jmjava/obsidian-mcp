@@ -1627,6 +1627,35 @@ def test_claim_task_rejects_ambiguous_todo_match(tmp_path: Path) -> None:
     assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
 
 
+def test_listed_project_key_is_not_visible_to_every_project(tmp_path: Path) -> None:
+    """A project key that is not a scalar must not belong to every project."""
+    vault = make_vault(tmp_path)
+    body = (
+        "---\n"
+        "status: open\n"
+        "project:\n"
+        "  - other-app\n"
+        "---\n\n"
+        "# Other billing leftover\n"
+    )
+    note = _write_todo(vault, "2026-09-10-other.md", body)
+    assert vault.search_memory("Other billing leftover", project="spring-auth") == []
+    assert vault.list_open_tasks("spring-auth").tasks == []
+    with pytest.raises(VaultError, match="No matching"):
+        vault.claim_task("spring-auth", "Other billing leftover", now=STAMP)
+    assert note.read_text(encoding="utf-8") == body
+    _write_todo(
+        vault,
+        "2026-09-10-loose.md",
+        "---\nstatus: open\n---\n\n# Loose leftover\n",
+    )
+    listed = [item.text for item in vault.list_open_tasks("spring-auth").tasks]
+    assert listed == ["Loose leftover"]
+    unscoped = vault.search_memory("Other billing leftover")
+    assert "TODO/2026-09-10-other.md" in [hit.path for hit in unscoped]
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
 def test_search_memory_finds_todo_title(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     _write_todo(vault, "2026-09-10-example.md", EXAMPLE_TODO)
