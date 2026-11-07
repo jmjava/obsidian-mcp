@@ -1109,7 +1109,10 @@ class Vault:
         project: str | None = None,
         limit: int = DEFAULT_SEARCH_LIMIT,
     ) -> list[SearchHit]:
-        """Search AI Memory project notes plus top-level TODO and Daily notes."""
+        """Search project notes and top-level TODO notes.
+
+        Daily notes are included only when no project filter is set.
+        """
         terms = [term.lower() for term in re.findall(r"[A-Za-z0-9_-]+", query)]
         if not terms:
             return []
@@ -1238,7 +1241,7 @@ class Vault:
         seen: set[Path] = set()
         self._collect_markdown_roots(roots, files, seen)
         self._collect_todo_memory_files(slug, files, seen)
-        self._collect_daily_memory_files(files, seen)
+        self._collect_daily_for_scope(slug, files, seen)
         return files
 
     def _memory_file_roots(self, project: str | None) -> tuple[str | None, list[Path]]:
@@ -1305,6 +1308,17 @@ class Vault:
         text = self._read_text(path)
         fields = parse_frontmatter_fields(text)
         return not self._todo_belongs_to_project(fields, slug, text)
+
+    def _collect_daily_for_scope(
+        self,
+        slug: str | None,
+        files: list[Path],
+        seen: set[Path],
+    ) -> None:
+        """Skip daily notes when a project filter is set."""
+        if slug is not None:
+            return
+        self._collect_daily_memory_files(files, seen)
 
     def _collect_daily_memory_files(self, files: list[Path], seen: set[Path]) -> None:
         for path in self._iter_daily_notes():

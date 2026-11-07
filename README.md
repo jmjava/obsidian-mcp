@@ -256,7 +256,7 @@ It fails clearly when the target project or vault is missing, and it merges MCP 
 | `complete_task` | Move an In Progress, Agent Queue, or TODO item to Completed; check a matching queue box |
 | `block_task` | Move a Next Steps or In Progress item to Blocked |
 | `unblock_task` | Move a Blocked or Blockers item back to Next Steps |
-| `search_memory` | Local filename and text search over project memory, top-level `TODO/*.md`, and `Daily/*.md` |
+| `search_memory` | Local filename and text search over project memory and top-level `TODO/*.md`. Daily notes are included only when no project filter is set |
 | `read_note` | Read one vault-relative Markdown file |
 | `append_daily_note` | Append to `Daily/YYYY-MM-DD.md`; same-title headings must be unique |
 | `quality_pool_flow` | Return the quality-pool contract: cap 7, selection order, and the workflow gate |
@@ -271,7 +271,7 @@ It fails clearly when the target project or vault is missing, and it merges MCP 
 
 `append_daily_note` splices under a heading only when that title is unique in the daily note. `heading="Usage"` will not write under a burn-plan Usage at the top when a later Usage exists. Concurrent appends take an exclusive lock outside the vault so they are not last-write-wins. The lock file is not written into the vault.
 
-`search_memory` indexes `AI Memory/Projects/**` plus top-level `TODO/*.md` and `Daily/*.md`. A search for a TODO title finds that note. Nested `TODO/finished/` is not scanned. The tool does not invent `Agent Queue.md`.
+`search_memory` indexes `AI Memory/Projects/**` plus top-level `TODO/*.md`. `Daily/*.md` is included only when no project filter is set. A search for a TODO title finds that note. Nested `TODO/finished/` is not scanned. The tool does not invent `Agent Queue.md`.
 
 ## Vault layout
 

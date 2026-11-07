@@ -1697,6 +1697,28 @@ def test_search_memory_finds_daily_note_phrase(tmp_path: Path) -> None:
     assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
 
 
+def test_project_search_does_not_return_daily_notes(tmp_path: Path) -> None:
+    """A project filter must not return a daily note from outside that project."""
+    vault = make_vault(tmp_path)
+    vault.capture_work_session(
+        "spring-auth",
+        summary="Indexed session phrase stays searchable",
+        now=STAMP,
+    )
+    daily = vault.append_daily_note(
+        "daily-only-phrase for another effort",
+        heading="Work",
+        now=STAMP,
+    )
+    assert vault.search_memory("daily-only-phrase", project="spring-auth") == []
+    unscoped = vault.search_memory("daily-only-phrase")
+    assert [hit.path for hit in unscoped] == [daily.path]
+    indexed = vault.search_memory("Indexed session phrase", project="spring-auth")
+    assert indexed
+    assert daily.path not in [hit.path for hit in indexed]
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
 def test_search_memory_ignores_agent_queue_and_leaves_it_unchanged(
     tmp_path: Path,
 ) -> None:

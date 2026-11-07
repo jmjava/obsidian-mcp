@@ -239,11 +239,12 @@ def create_server(vault: Vault | None = None) -> Any:
         project: str | None = None,
         limit: int = 20,
     ) -> list[dict[str, Any]]:
-        """Search project memory, top-level TODO notes, and Daily notes.
+        """Search project memory and top-level TODO notes.
 
         Matching uses vault text; titles and excerpts are secret-redacted.
-        Indexes AI Memory/Projects notes plus top-level TODO/*.md and
-        Daily/*.md. Nested TODO/finished/ is not scanned. Does not invent
+        Indexes AI Memory/Projects notes plus top-level TODO/*.md.
+        Daily/*.md is included only when no project filter is set.
+        Nested TODO/finished/ is not scanned. Does not invent
         Agent Queue.md.
         """
         return [
