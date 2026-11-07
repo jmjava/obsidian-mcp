@@ -163,6 +163,12 @@ def _kept_blocked(
     return [str(item) for item in parsed]
 
 
+def _without_matched_task(items: Sequence[str], task: str) -> list[str]:
+    """Drop open copies of a task that has been completed."""
+    needle = normalize_task_text(task)
+    return [item for item in items if normalize_task_text(item) != needle]
+
+
 class VaultError(Exception):
     """Base error for vault operations.
 
@@ -618,6 +624,7 @@ class Vault:
                 completed = self._append_unique_task(completed, matched)
             parsed["in_progress"] = in_progress
             parsed["completed"] = completed
+            parsed["next_steps"] = _without_matched_task(next_steps, matched)
             return self._rewrite_moved_task(
                 project=project,
                 parsed=parsed,

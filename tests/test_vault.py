@@ -802,6 +802,29 @@ def test_claim_and_complete_move_next_step_bullets(tmp_path: Path) -> None:
     assert daily.read_text(encoding="utf-8") == "# Daily\n\nDo not overwrite me\n"
 
 
+def test_complete_task_drops_the_same_open_next_step(tmp_path: Path) -> None:
+    """Completing a task must not leave that task listed as open."""
+    vault = make_vault(tmp_path)
+    vault.update_project_state(
+        "spring-auth",
+        in_progress=["Write docs"],
+        next_steps=["Write docs", "Ship the guide"],
+        now=STAMP,
+    )
+    done = vault.complete_task("spring-auth", "Write docs", now=STAMP)
+    assert done.from_section == "In Progress"
+    assert done.to_section == "Completed"
+    text = vault.project_state_path("spring-auth").read_text(encoding="utf-8")
+    completed_block = text.split("## Completed", 1)[1].split("##", 1)[0]
+    assert "Write docs" in completed_block
+    next_block = text.split("## Next Steps", 1)[1].split("##", 1)[0]
+    assert "Write docs" not in next_block
+    assert "Ship the guide" in next_block
+    open_tasks = vault.list_open_tasks("spring-auth", include_agent_queue=False)
+    assert [task.text for task in open_tasks.tasks] == ["Ship the guide"]
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
 def test_claim_task_rejects_missing_and_already_claimed(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     vault.update_project_state(
