@@ -91,6 +91,30 @@ def test_update_project_state_partial_rewrite_keeps_custom_and_omitted_sections(
     assert "Agent Queue.md" not in text
 
 
+def test_objective_update_keeps_blockers_bullets(tmp_path: Path) -> None:
+    """An omitted Blocked field must not drop the Blockers list."""
+    vault = make_vault(tmp_path)
+    vault.ensure_project("spring-auth")
+    state = vault.project_state_path("spring-auth")
+    state.write_text(
+        "# Project State\n\n"
+        "## Objective\n\n"
+        "Keep me\n\n"
+        "## Blocked\n\n"
+        "- Waiting on review\n\n"
+        "## Blockers\n\n"
+        "- External dependency\n",
+        encoding="utf-8",
+    )
+    vault.update_project_state("spring-auth", objective="Updated", now=STAMP)
+    text = state.read_text(encoding="utf-8")
+    assert "Updated" in text
+    assert "Keep me" not in text
+    assert "Waiting on review" in text
+    assert "External dependency" in text
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
 def test_appends_session(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     first = vault.capture_work_session(
