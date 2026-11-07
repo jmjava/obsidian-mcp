@@ -26,6 +26,8 @@ from obsidian_dev_memory.markdown import (
     format_frontmatter,
     format_heading_time,
     format_iso_datetime,
+    heading_level,
+    heading_title,
     join_blocks,
     local_now,
     move_open_checkbox,
@@ -107,6 +109,26 @@ def _shield_extras(
     if not sections:
         return sections
     return [(title, _shield_bearer_value(str(body))) for title, body in sections]
+
+
+def _kept_blocked(
+    existing: str,
+    blocked: Sequence[str] | None,
+) -> Sequence[str] | None:
+    """Keep Blockers bullets when a patch omits the Blocked field."""
+    if blocked is not None:
+        return blocked
+    titles = [
+        heading_title(line)
+        for line in existing.splitlines()
+        if heading_level(line) == 2
+    ]
+    if "blocked" not in titles or "blockers" not in titles:
+        return None
+    parsed = parse_project_state(existing)["blocked"]
+    if not isinstance(parsed, list) or not parsed:
+        return None
+    return [str(item) for item in parsed]
 
 
 class VaultError(Exception):
@@ -376,7 +398,7 @@ class Vault:
                 architecture=_shield_sequence(architecture),
                 completed=_shield_sequence(completed),
                 in_progress=_shield_sequence(in_progress),
-                blocked=_shield_sequence(blocked),
+                blocked=_shield_sequence(_kept_blocked(existing, blocked)),
                 next_steps=_shield_sequence(next_steps),
                 important_files=_shield_sequence(important_files),
                 notes=_shield_sequence(notes),
