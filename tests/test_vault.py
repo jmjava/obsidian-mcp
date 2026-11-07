@@ -489,6 +489,35 @@ def test_append_daily_note_serializes_concurrent_appends(tmp_path: Path) -> None
         assert f"item-{index}" in text
 
 
+def test_capture_work_session_serializes_concurrent_appends(tmp_path: Path) -> None:
+    """Concurrent session appends must not drop an entry."""
+    vault = make_vault(tmp_path)
+    errors: list[BaseException] = []
+
+    def write(index: int) -> None:
+        try:
+            vault.capture_work_session(
+                "spring-auth",
+                summary=f"item-{index}",
+                now=STAMP,
+            )
+        except BaseException as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=write, args=(index,)) for index in range(20)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert errors == []
+    text = (
+        vault.root / "AI Memory" / "Projects" / "spring-auth" / "Sessions" / "2026-08-22.md"
+    ).read_text(encoding="utf-8")
+    for index in range(20):
+        assert f"item-{index}" in text
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
 def test_search_finds_known_content(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     vault.update_project_state(
