@@ -447,6 +447,48 @@ def test_prevents_escaping_vault_root_via_symlink(tmp_path: Path) -> None:
         vault.read_note("leak/secret.txt")
 
 
+def test_read_and_search_refuse_non_markdown_files_inside_the_vault(tmp_path: Path) -> None:
+    """Refuse a non-Markdown file even when the path stays inside the vault."""
+    vault = make_vault(tmp_path)
+    token = "fixture-token-value-99"
+    env_body = f"token={token}\n"
+    env = vault.root / ".env"
+    env.write_text(env_body, encoding="utf-8")
+    vault.capture_work_session(
+        "spring-auth",
+        summary="Indexed session phrase stays searchable",
+        now=STAMP,
+    )
+    link = (
+        vault.root
+        / "AI Memory"
+        / "Projects"
+        / "spring-auth"
+        / "Sessions"
+        / "leak.md"
+    )
+    link.symlink_to(env)
+
+    with pytest.raises(VaultPathError, match="Markdown"):
+        vault.read_note(".env")
+    with pytest.raises(VaultPathError, match="Markdown"):
+        vault.read_note("AI Memory/Projects/spring-auth/Sessions/leak.md")
+
+    assert vault.search_memory(token, project="spring-auth") == []
+    indexed = vault.search_memory("Indexed session phrase", project="spring-auth")
+    assert indexed
+    assert token not in indexed[0].matching_excerpt
+    assert token not in indexed[0].title
+
+    context = vault.get_project_context("spring-auth")
+    rendered = context.project_state
+    rendered += "".join(document.content for document in context.recent_sessions)
+    assert token not in rendered
+    assert env.read_text(encoding="utf-8") == env_body
+    assert link.is_symlink()
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
 def test_list_blocked_tasks_reads_blocked_and_blockers(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     daily = vault.root / "Daily" / "2026-08-22.md"
