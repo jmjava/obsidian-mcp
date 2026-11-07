@@ -347,14 +347,25 @@ class Vault:
             git_info=git_info,
             now=stamp,
         )
-        existing = self._read_text(session_path) if session_path.exists() else ""
-        created = not session_path.exists()
-        self._atomic_write(session_path, join_blocks(existing, entry))
-        return WriteResult(
-            path=self.relative_path(session_path),
-            created=created,
-            message="Appended work session",
-        )
+        return self._append_session_entry(session_path, slug, stamp, entry)
+
+    def _append_session_entry(
+        self,
+        session_path: Path,
+        project_slug: str,
+        stamp: datetime,
+        entry: str,
+    ) -> WriteResult:
+        """Append one session entry without losing a concurrent append."""
+        with self._exclusive_session_lock(project_slug, format_date(stamp)):
+            existing = self._read_text(session_path) if session_path.exists() else ""
+            created = not session_path.exists()
+            self._atomic_write(session_path, join_blocks(existing, entry))
+            return WriteResult(
+                path=self.relative_path(session_path),
+                created=created,
+                message="Appended work session",
+            )
 
     def record_decision(
         self,
@@ -799,6 +810,24 @@ class Vault:
         slug = self.project_slug(project)
         key = hashlib.sha256(f"{self.root}:{slug}".encode()).hexdigest()[:16]
         lock_path = Path(tempfile.gettempdir()) / f"obsidian-mcp-task-{key}.lock"
+        with lock_path.open("a+", encoding="utf-8") as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+    @contextmanager
+    def _exclusive_session_lock(self, project_slug: str, day: str) -> Iterator[None]:
+        """Serialize session appends for one project day.
+
+        The lock file lives in the process temp dir so the vault is never
+        given an extra note (including Agent Queue.md).
+        """
+        key = hashlib.sha256(
+            f"{self.root}:session:{project_slug}:{day}".encode()
+        ).hexdigest()[:16]
+        lock_path = Path(tempfile.gettempdir()) / f"obsidian-mcp-session-{key}.lock"
         with lock_path.open("a+", encoding="utf-8") as handle:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
             try:
