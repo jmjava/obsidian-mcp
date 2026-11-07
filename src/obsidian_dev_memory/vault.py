@@ -111,6 +111,38 @@ def _shield_extras(
     return [(title, _shield_bearer_value(str(body))) for title, body in sections]
 
 
+def _reject_level2_heading(text: str) -> None:
+    """Refuse field text that would be parsed as a new project-state section."""
+    for line in text.splitlines():
+        if heading_level(line) == 2:
+            raise VaultError("Project state fields cannot contain a Markdown heading")
+
+
+def _state_text(text: str | None) -> str | None:
+    if text is None:
+        return None
+    value = _shield_bearer_value(text)
+    _reject_level2_heading(value)
+    return value
+
+
+def _state_sequence(items: Sequence[str] | None) -> Sequence[str] | None:
+    if not items:
+        return items
+    return [_state_text(str(item)) or "" for item in items]
+
+
+def _state_extras(
+    sections: Sequence[tuple[str, str]] | None,
+) -> Sequence[tuple[str, str]] | None:
+    if not sections:
+        return sections
+    rendered: list[tuple[str, str]] = []
+    for title, body in sections:
+        rendered.append((_state_text(str(title)) or "", _state_text(str(body)) or ""))
+    return rendered
+
+
 def _kept_blocked(
     existing: str,
     blocked: Sequence[str] | None,
@@ -393,16 +425,16 @@ class Vault:
             "# Project State",
             *patch_project_state_sections(
                 existing,
-                objective=_shield_text(objective),
-                current_state=_shield_text(current_state),
-                architecture=_shield_sequence(architecture),
-                completed=_shield_sequence(completed),
-                in_progress=_shield_sequence(in_progress),
-                blocked=_shield_sequence(_kept_blocked(existing, blocked)),
-                next_steps=_shield_sequence(next_steps),
-                important_files=_shield_sequence(important_files),
-                notes=_shield_sequence(notes),
-                extra_sections=_shield_extras(extra_sections),
+                objective=_state_text(objective),
+                current_state=_state_text(current_state),
+                architecture=_state_sequence(architecture),
+                completed=_state_sequence(completed),
+                in_progress=_state_sequence(in_progress),
+                blocked=_shield_sequence(_kept_blocked(existing, _state_sequence(blocked))),
+                next_steps=_state_sequence(next_steps),
+                important_files=_state_sequence(important_files),
+                notes=_state_sequence(notes),
+                extra_sections=_state_extras(extra_sections),
             ),
         )
         self._atomic_write(path, body)
