@@ -12,13 +12,16 @@ logger = logging.getLogger("obsidian_dev_memory")
 
 _GIT_TIMEOUT_SECONDS = 5
 _MAX_CHANGED_FILES = 20
+# Command-line config overrides a repository core.fsmonitor hook.
+_GIT_NO_FSMONITOR = ("-c", "core.fsmonitor=")
 
 
 def collect_git_context(repository_path: str | Path | None) -> GitInfo | None:
     """Return a concise Git snapshot, or ``None`` when Git is unavailable.
 
     Failures are non-fatal. File contents, diffs, secrets, and environment
-    variables are never included.
+    variables are never included. A repository ``core.fsmonitor`` command
+    is not executed.
     """
     if repository_path is None:
         return None
@@ -63,7 +66,7 @@ def collect_git_context(repository_path: str | Path | None) -> GitInfo | None:
 def _git(args: list[str], *, cwd: Path) -> str | None:
     try:
         result = subprocess.run(
-            ["git", *args],
+            ["git", *_GIT_NO_FSMONITOR, *args],
             cwd=cwd,
             capture_output=True,
             text=True,
