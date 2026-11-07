@@ -890,6 +890,32 @@ def _write_agent_queue(vault: Vault, body: str) -> Path:
     return queue
 
 
+def test_failed_claim_does_not_leave_the_agent_queue_checked(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A claim that fails to rewrite Project State must leave the queue box open."""
+    vault = make_vault(tmp_path)
+    vault.update_project_state(
+        "spring-auth",
+        next_steps=["Write docs"],
+        now=STAMP,
+    )
+    queue_body = "# Agent Queue\n\n- [ ] Write docs\n"
+    queue = _write_agent_queue(vault, queue_body)
+    state_path = vault.project_state_path("spring-auth")
+    state_before = state_path.read_text(encoding="utf-8")
+
+    def fail_state(*_args: object, **_kwargs: object) -> None:
+        raise VaultError("state write failed")
+
+    monkeypatch.setattr(vault, "update_project_state", fail_state)
+    with pytest.raises(VaultError, match="state write failed"):
+        vault.claim_task("spring-auth", "Write docs", now=STAMP)
+    assert queue.read_text(encoding="utf-8") == queue_body
+    assert state_path.read_text(encoding="utf-8") == state_before
+
+
 def test_claim_task_checks_matching_agent_queue_checkbox(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     daily = vault.root / "Daily" / "2026-08-22.md"

@@ -877,6 +877,35 @@ class Vault:
             return _QueueSync(rel, None, "unchecked")
         return _QueueSync(rel, updated, "updated")
 
+    def _commit_queue_then_state(
+        self,
+        queue_sync: _QueueSync,
+        *,
+        project: str,
+        parsed: dict[str, str | list[str] | list[tuple[str, str]]],
+        now: datetime | None,
+    ) -> WriteResult:
+        """Check the queue, then write state. Reopen the box if state fails."""
+        previous = self._store_queue_body(queue_sync)
+        try:
+            return self.update_project_state(project=project, now=now, **parsed)
+        except Exception:
+            self._restore_queue_body(previous)
+            raise
+
+    def _store_queue_body(self, queue_sync: _QueueSync) -> str | None:
+        if queue_sync.body is None:
+            return None
+        path = self.agent_queue_path()
+        previous = self._read_text(path)
+        self._atomic_write(path, queue_sync.body)
+        return previous
+
+    def _restore_queue_body(self, previous: str | None) -> None:
+        if previous is None:
+            return
+        self._atomic_write(self.agent_queue_path(), previous)
+
     def _queue_sync_message(self, message: str, status: str) -> str:
         if status == "updated":
             return f"{message} and checked Agent Queue item"
@@ -914,10 +943,14 @@ class Vault:
                 status=todo_status,
             )
         # Write the queue before Project State so a later state write cannot
-        # report success while a matching box stays open.
-        if queue_sync.body is not None:
-            self._atomic_write(self.agent_queue_path(), queue_sync.body)
-        written = self.update_project_state(project=project, now=now, **parsed)
+        # report success while a matching box stays open. Put the box back
+        # if that state write fails.
+        written = self._commit_queue_then_state(
+            queue_sync,
+            project=project,
+            parsed=parsed,
+            now=now,
+        )
         todo_updated = False
         if todo_body is not None:
             self._atomic_write(self.safe_path(todo_path), todo_body)
