@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import subprocess
+import time
 from pathlib import Path
 
 from obsidian_dev_memory.git_context import collect_git_context
@@ -61,6 +63,20 @@ def test_snapshot_does_not_run_repository_fsmonitor(tmp_path: Path) -> None:
     assert info.dirty is False
     assert info.short_sha
     assert not marker.exists()
+
+
+def test_snapshot_does_not_rewrite_the_index(tmp_path: Path) -> None:
+    """A snapshot must not update the Git index while reading status."""
+    repo = _init_repo(tmp_path)
+    index = repo / ".git" / "index"
+    future = time.time() + 5
+    os.utime(repo / "README.md", (future, future))
+    before = index.read_bytes()
+    info = collect_git_context(repo)
+    assert info is not None
+    assert info.dirty is False
+    assert info.short_sha
+    assert index.read_bytes() == before
 
 
 def test_non_git_path_is_non_fatal(tmp_path: Path) -> None:

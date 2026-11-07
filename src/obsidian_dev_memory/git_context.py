@@ -14,6 +14,8 @@ _GIT_TIMEOUT_SECONDS = 5
 _MAX_CHANGED_FILES = 20
 # Command-line config overrides a repository core.fsmonitor hook.
 _GIT_NO_FSMONITOR = ("-c", "core.fsmonitor=")
+# Status refreshes the index unless optional locks are disabled.
+_GIT_NO_OPTIONAL_LOCKS = ("--no-optional-locks",)
 
 
 def collect_git_context(repository_path: str | Path | None) -> GitInfo | None:
@@ -21,7 +23,7 @@ def collect_git_context(repository_path: str | Path | None) -> GitInfo | None:
 
     Failures are non-fatal. File contents, diffs, secrets, and environment
     variables are never included. A repository ``core.fsmonitor`` command
-    is not executed.
+    is not executed. The snapshot does not update the Git index.
     """
     if repository_path is None:
         return None
@@ -66,7 +68,7 @@ def collect_git_context(repository_path: str | Path | None) -> GitInfo | None:
 def _git(args: list[str], *, cwd: Path) -> str | None:
     try:
         result = subprocess.run(
-            ["git", *_GIT_NO_FSMONITOR, *args],
+            ["git", *_GIT_NO_OPTIONAL_LOCKS, *_GIT_NO_FSMONITOR, *args],
             cwd=cwd,
             capture_output=True,
             text=True,
