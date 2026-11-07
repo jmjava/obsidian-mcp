@@ -156,11 +156,20 @@ class Vault:
         return current
 
     def _reject_resolved_escape(self, current: Path) -> None:
+        self._reject_in_vault_markdown_symlink(current)
         if not (current.exists() or current.is_symlink()):
             return
         resolved = current.resolve()
         if not self._contained(resolved):
             raise VaultPathError("Resolved path escapes the vault")
+
+    def _reject_in_vault_markdown_symlink(self, current: Path) -> None:
+        """Refuse a symlink whose target is a Markdown note inside the vault."""
+        if not current.is_symlink():
+            return
+        resolved = current.resolve()
+        if self._contained(resolved) and resolved.suffix.lower() == ".md":
+            raise VaultPathError("Symlinks are not allowed as note paths")
 
     def _finish_contained_path(self, current: Path) -> Path:
         if current.exists() or current.is_symlink():
@@ -1024,7 +1033,7 @@ class Vault:
         files = [
             path
             for path in directory.iterdir()
-            if path.is_file() and path.resolve().suffix.lower() == ".md"
+            if self._can_index_markdown(path, path.resolve())
         ]
         files.sort(key=lambda item: item.name, reverse=True)
         documents: list[MemoryDocument] = []
@@ -1070,9 +1079,17 @@ class Vault:
         resolved = path.resolve()
         if resolved in seen:
             return
-        if path.is_file() and resolved.suffix.lower() == ".md" and self._contained(resolved):
+        if self._can_index_markdown(path, resolved):
             seen.add(resolved)
             files.append(path)
+
+    def _can_index_markdown(self, path: Path, resolved: Path) -> bool:
+        """Index a real Markdown file. Do not follow an in-vault note symlink."""
+        if path.is_symlink() and self._contained(resolved) and resolved.suffix.lower() == ".md":
+            return False
+        if not path.is_file() or resolved.suffix.lower() != ".md":
+            return False
+        return self._contained(resolved)
 
     def _collect_markdown_roots(
         self,
@@ -1151,6 +1168,7 @@ class Vault:
 
     def _read_text(self, path: Path) -> str:
         self._assert_inside(path)
+        self._reject_in_vault_markdown_symlink(path)
         self._require_markdown_note(path)
         return path.read_text(encoding="utf-8")
 

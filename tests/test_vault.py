@@ -489,6 +489,54 @@ def test_read_and_search_refuse_non_markdown_files_inside_the_vault(tmp_path: Pa
     assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
 
 
+def test_project_scope_does_not_follow_symlink_into_another_project_note(
+    tmp_path: Path,
+) -> None:
+    """A Markdown symlink must not expose another project's note."""
+    vault = make_vault(tmp_path)
+    phrase = "hidden-billing-phrase"
+    other = vault.capture_work_session(
+        "other-app",
+        summary=f"Discussed {phrase} for billing",
+        now=STAMP,
+    )
+    vault.capture_work_session(
+        "spring-auth",
+        summary="Indexed session phrase stays searchable",
+        now=STAMP,
+    )
+    other_path = vault.root / other.path
+    other_text = other_path.read_text(encoding="utf-8")
+    link = (
+        vault.root
+        / "AI Memory"
+        / "Projects"
+        / "spring-auth"
+        / "Sessions"
+        / "alias.md"
+    )
+    link.symlink_to(other_path)
+
+    with pytest.raises(VaultPathError, match="Symlink"):
+        vault.read_note("AI Memory/Projects/spring-auth/Sessions/alias.md")
+
+    scoped = vault.search_memory(phrase, project="spring-auth")
+    assert scoped == []
+    indexed = vault.search_memory("Indexed session phrase", project="spring-auth")
+    assert indexed
+    assert phrase not in indexed[0].matching_excerpt
+
+    context = vault.get_project_context("spring-auth")
+    rendered = "".join(document.content for document in context.recent_sessions)
+    assert phrase not in rendered
+
+    unscoped = vault.search_memory(phrase)
+    assert [hit.path for hit in unscoped] == [other.path]
+    assert other_path.read_text(encoding="utf-8") == other_text
+    assert link.is_symlink()
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
 def test_list_blocked_tasks_reads_blocked_and_blockers(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     daily = vault.root / "Daily" / "2026-08-22.md"
