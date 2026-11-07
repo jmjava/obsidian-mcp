@@ -20,7 +20,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.0",
+    "pytest>=8.0,<9.2",
     "ruff>=0.8",
     "mutmut==3.8.0",
 ]
@@ -40,7 +40,7 @@ packages = ["src/obsidian_dev_memory"]
 
 [dependency-groups]
 dev = [
-    "pytest>=8.0",
+    "pytest>=8.0,<9.2",
     "ruff>=0.8",
     "mutmut==3.8.0",
 ]
