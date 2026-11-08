@@ -79,6 +79,28 @@ def test_snapshot_does_not_rewrite_the_index(tmp_path: Path) -> None:
     assert index.read_bytes() == before
 
 
+def test_snapshot_ignores_ambient_git_dir(tmp_path: Path, monkeypatch) -> None:
+    """An ambient GIT_DIR must not replace the requested repository."""
+    target = _init_repo(tmp_path)
+    target_sha = subprocess.run(
+        ["git", "rev-parse", "--short", "HEAD"],
+        cwd=target,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    other = tmp_path / "other-repo"
+    other.mkdir()
+    _run_git(other, "init", "-b", "other-branch")
+    monkeypatch.setenv("GIT_DIR", str(other / ".git"))
+    info = collect_git_context(target)
+    assert info is not None
+    assert info.repo_name == "sample-repo"
+    assert info.branch != "other-branch"
+    assert info.short_sha == target_sha
+    assert info.dirty is False
+
+
 def test_non_git_path_is_non_fatal(tmp_path: Path) -> None:
     plain = tmp_path / "not-a-repo"
     plain.mkdir()

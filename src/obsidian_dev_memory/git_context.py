@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 from pathlib import Path
 
@@ -23,7 +24,8 @@ def collect_git_context(repository_path: str | Path | None) -> GitInfo | None:
 
     Failures are non-fatal. File contents, diffs, secrets, and environment
     variables are never included. A repository ``core.fsmonitor`` command
-    is not executed. The snapshot does not update the Git index.
+    is not executed. The snapshot does not update the Git index. An ambient
+    ``GIT_DIR`` does not select a different repository.
     """
     if repository_path is None:
         return None
@@ -65,6 +67,13 @@ def collect_git_context(repository_path: str | Path | None) -> GitInfo | None:
     )
 
 
+def _git_subprocess_env() -> dict[str, str]:
+    """Use the requested working tree instead of an ambient ``GIT_DIR``."""
+    env = os.environ.copy()
+    env.pop("GIT_DIR", None)
+    return env
+
+
 def _git(args: list[str], *, cwd: Path) -> str | None:
     try:
         result = subprocess.run(
@@ -74,6 +83,7 @@ def _git(args: list[str], *, cwd: Path) -> str | None:
             text=True,
             timeout=_GIT_TIMEOUT_SECONDS,
             check=False,
+            env=_git_subprocess_env(),
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         logger.info("Git command failed: git %s (%s)", " ".join(args), exc)
