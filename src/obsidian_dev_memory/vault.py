@@ -45,6 +45,7 @@ from obsidian_dev_memory.markdown import (
     section,
     set_frontmatter_field,
     slugify,
+    strip_frontmatter,
 )
 from obsidian_dev_memory.models import (
     GitInfo,
@@ -468,6 +469,59 @@ _HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 def _without_html_comments(text: str) -> str:
     """Drop HTML comments so an example heading is not the open task."""
     return _HTML_COMMENT_RE.sub("", text)
+
+
+def _frontmatter_source(note: str) -> str:
+    """Return the YAML block, or empty when the note has no frontmatter."""
+    if not note.startswith("---"):
+        return ""
+    rest = note[3:]
+    if rest.startswith("\n"):
+        rest = rest[1:]
+    end = rest.find("\n---")
+    if end < 0:
+        return ""
+    return rest[:end]
+
+
+def _checkbox_keys(note: str) -> set[str]:
+    return {normalize_task_text(item) for item in parse_open_checkboxes(note)}
+
+
+def _keep_visible_todo(
+    entry: tuple[str, str],
+    front_keys: set[str],
+    body_keys: set[str],
+) -> bool:
+    """Keep a checkbox only when it also appears outside frontmatter."""
+    text, kind = entry
+    if kind != "checkbox":
+        return True
+    key = normalize_task_text(text)
+    if key in body_keys:
+        return True
+    return key not in front_keys
+
+
+def _visible_todo_entries(
+    text: str,
+    fallback_title: str,
+    note_statuses: frozenset[str],
+) -> list[tuple[str, str]]:
+    """Open TODO entries, without a checkbox that exists only in frontmatter."""
+    cleaned = _without_html_comments(text)
+    entries = parse_open_todo_entries(
+        cleaned,
+        fallback_title,
+        note_statuses=note_statuses,
+    )
+    front_keys = _checkbox_keys(_frontmatter_source(cleaned))
+    body_keys = _checkbox_keys(strip_frontmatter(cleaned))
+    return [
+        entry
+        for entry in entries
+        if _keep_visible_todo(entry, front_keys, body_keys)
+    ]
 
 
 def _without_matched_task(items: Sequence[str], task: str) -> list[str]:
@@ -1346,10 +1400,10 @@ class Vault:
             fields = parse_frontmatter_fields(text)
             if not self._todo_belongs_to_project(fields, slug, text):
                 continue
-            for entry_text, kind in parse_open_todo_entries(
-                _without_html_comments(text),
+            for entry_text, kind in _visible_todo_entries(
+                text,
                 path.stem,
-                note_statuses=note_statuses,
+                note_statuses,
             ):
                 items.append(_TodoMatch(text=entry_text, path=path, kind=kind))
         return items
