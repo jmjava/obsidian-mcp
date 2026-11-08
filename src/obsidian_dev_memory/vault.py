@@ -324,6 +324,14 @@ def _drop_fenced_next_steps(items: Sequence[str], note: str) -> list[str]:
     return [item for item in texts if normalize_task_text(item) not in fenced]
 
 
+_HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+
+
+def _without_html_comments(text: str) -> str:
+    """Drop HTML comments so an example heading is not the open task."""
+    return _HTML_COMMENT_RE.sub("", text)
+
+
 def _without_matched_task(items: Sequence[str], task: str) -> list[str]:
     """Drop open copies of a task that has been completed."""
     needle = normalize_task_text(task)
@@ -1196,7 +1204,7 @@ class Vault:
             if not self._todo_belongs_to_project(fields, slug, text):
                 continue
             for entry_text, kind in parse_open_todo_entries(
-                text,
+                _without_html_comments(text),
                 path.stem,
                 note_statuses=note_statuses,
             ):
