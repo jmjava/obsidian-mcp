@@ -1423,7 +1423,11 @@ class Vault:
                     path=rel,
                     title=_public_text(extract_title(text, path.stem)),
                     matching_excerpt=_public_text(
-                        excerpt_around(text, terms, limit=DEFAULT_EXCERPT_LIMIT)
+                        excerpt_around(
+                            _public_text(text),
+                            terms,
+                            limit=DEFAULT_EXCERPT_LIMIT,
+                        )
                     ),
                     score=score,
                 )

@@ -341,6 +341,35 @@ def test_search_memory_excerpt_redacts_password_assignment(tmp_path: Path) -> No
     assert path.read_text(encoding="utf-8") == raw
 
 
+def test_search_excerpt_does_not_return_a_split_token(tmp_path: Path) -> None:
+    """A credential cut by the excerpt window must not come back in pieces."""
+    vault = make_vault(tmp_path)
+    vault.ensure_project("spring-auth")
+    path = vault.project_state_path("spring-auth")
+    token = "eyJfixtureheader.fixturepayload.fixturesignature"
+    raw = (
+        "---\n"
+        "type: project-state\n"
+        "project: spring-auth\n"
+        "---\n"
+        "\n"
+        "# Project State\n"
+        "\n"
+        "Indexed phrase " + ("p" * 120) + " " + token + " tail\n"
+    )
+    path.write_text(raw, encoding="utf-8")
+    hits = vault.search_memory("Indexed", project="spring-auth")
+    assert hits
+    excerpt = hits[0].matching_excerpt
+    assert "eyJfixture" not in excerpt
+    assert token not in excerpt
+    assert SECRET_PLACEHOLDER in excerpt
+    assert "Indexed phrase" in excerpt
+    assert path.read_text(encoding="utf-8") == raw
+    assert token not in vault.read_note(hits[0].path)["content"]
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
 def test_get_project_context_redacts_password_assignment(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     vault.ensure_project("spring-auth")
