@@ -101,6 +101,29 @@ def test_snapshot_ignores_ambient_git_dir(tmp_path: Path, monkeypatch) -> None:
     assert info.dirty is False
 
 
+def test_snapshot_ignores_ambient_git_work_tree(tmp_path: Path, monkeypatch) -> None:
+    """An ambient GIT_WORK_TREE must not replace the requested repository."""
+    target = _init_repo(tmp_path)
+    target_sha = subprocess.run(
+        ["git", "rev-parse", "--short", "HEAD"],
+        cwd=target,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    other = tmp_path / "other-tree"
+    other.mkdir()
+    (other / "other-file.txt").write_text("from other\n", encoding="utf-8")
+    monkeypatch.setenv("GIT_WORK_TREE", str(other))
+    info = collect_git_context(target)
+    assert info is not None
+    assert info.repo_name == "sample-repo"
+    assert info.repo_name != other.name
+    assert info.short_sha == target_sha
+    assert info.branch
+    assert info.dirty is False
+
+
 def test_non_git_path_is_non_fatal(tmp_path: Path) -> None:
     plain = tmp_path / "not-a-repo"
     plain.mkdir()
