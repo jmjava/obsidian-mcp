@@ -854,6 +854,27 @@ def test_complete_task_drops_the_same_open_next_step(tmp_path: Path) -> None:
     assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
 
 
+def test_checked_next_step_is_not_an_open_task(tmp_path: Path) -> None:
+    """A checked Next Steps box must not be listed or claimed as open work."""
+    vault = make_vault(tmp_path)
+    vault.ensure_project("spring-auth")
+    state = vault.project_state_path("spring-auth")
+    original = (
+        "# Project State\n\n"
+        "## Next Steps\n\n"
+        "- [x] Write docs\n"
+        "- [ ] Ship the guide\n"
+        "- Plain step\n"
+    )
+    state.write_text(original, encoding="utf-8")
+    listed = vault.list_open_tasks("spring-auth", include_agent_queue=False)
+    assert [task.text for task in listed.tasks] == ["Ship the guide", "Plain step"]
+    with pytest.raises(VaultError, match="No matching"):
+        vault.claim_task("spring-auth", "Write docs", now=STAMP)
+    assert state.read_text(encoding="utf-8") == original
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
 def test_claim_task_rejects_missing_and_already_claimed(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     vault.update_project_state(
