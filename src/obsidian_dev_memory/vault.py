@@ -93,6 +93,14 @@ def _public_text(text: str) -> str:
     return redact_secrets(_shield_bearer_value(text))
 
 
+def _read_utf8(path: Path) -> str:
+    """Read a note as UTF-8, or refuse bytes that are not text."""
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise VaultError("Note is not valid UTF-8") from exc
+
+
 def _shield_text(text: str | None) -> str | None:
     if text is None:
         return None
@@ -1262,7 +1270,7 @@ class Vault:
         limit = max(1, limit)
         hits: list[SearchHit] = []
         for path in self._iter_memory_files(project):
-            text = self._read_text(path)
+            text = self._indexable_text(path)
             lowered = text.lower()
             filename = path.name.lower()
             score = 0.0
@@ -1506,11 +1514,18 @@ class Vault:
             return text
         return text[: DEFAULT_CONTEXT_LIMIT].rstrip() + "\n..."
 
+    def _indexable_text(self, path: Path) -> str:
+        """Return note text, or empty when that note cannot be decoded."""
+        try:
+            return self._read_text(path)
+        except VaultError:
+            return ""
+
     def _read_text(self, path: Path) -> str:
         self._assert_inside(path)
         self._reject_in_vault_markdown_symlink(path)
         self._require_markdown_note(path)
-        return path.read_text(encoding="utf-8")
+        return _read_utf8(path)
 
     def _atomic_write(self, path: Path, content: str) -> None:
         self._assert_inside(path)
