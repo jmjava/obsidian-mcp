@@ -19,6 +19,7 @@ from obsidian_dev_memory.markdown import (
     HeadingMatchError,
     TaskMatchError,
     append_under_heading,
+    bullet_list,
     excerpt_around,
     extract_title,
     find_matching_task,
@@ -33,6 +34,7 @@ from obsidian_dev_memory.markdown import (
     move_open_checkbox,
     move_task_bullet,
     normalize_task_text,
+    parse_bullets,
     parse_frontmatter_fields,
     parse_open_checkboxes,
     parse_open_todo_entries,
@@ -126,10 +128,22 @@ def _state_text(text: str | None) -> str | None:
     return value
 
 
+def _reject_extra_task_line(text: str) -> None:
+    """Refuse one list item that would parse as more than one task."""
+    if len(parse_bullets(bullet_list([text]))) > 1:
+        raise VaultError("Project state fields cannot contain an extra task")
+
+
+def _state_list_item(text: str) -> str:
+    value = _state_text(text) or ""
+    _reject_extra_task_line(value)
+    return value
+
+
 def _state_sequence(items: Sequence[str] | None) -> Sequence[str] | None:
     if not items:
         return items
-    return [_state_text(str(item)) or "" for item in items]
+    return [_state_list_item(str(item)) for item in items]
 
 
 def _state_extras(

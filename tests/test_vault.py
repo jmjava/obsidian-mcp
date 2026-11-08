@@ -138,6 +138,28 @@ def test_project_state_field_cannot_invent_a_section(tmp_path: Path) -> None:
     assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
 
 
+def test_list_item_cannot_smuggle_another_task(tmp_path: Path) -> None:
+    """One list item must not turn into a second open task."""
+    vault = make_vault(tmp_path)
+    vault.update_project_state(
+        "spring-auth",
+        next_steps=["Ship the guide"],
+        now=STAMP,
+    )
+    state = vault.project_state_path("spring-auth")
+    before = state.read_text(encoding="utf-8")
+    with pytest.raises(VaultError, match="extra task"):
+        vault.update_project_state(
+            "spring-auth",
+            next_steps=["Write docs\n- Hidden leftover"],
+            now=STAMP,
+        )
+    assert state.read_text(encoding="utf-8") == before
+    open_tasks = vault.list_open_tasks("spring-auth", include_agent_queue=False)
+    assert [task.text for task in open_tasks.tasks] == ["Ship the guide"]
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
 def test_appends_session(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     first = vault.capture_work_session(
