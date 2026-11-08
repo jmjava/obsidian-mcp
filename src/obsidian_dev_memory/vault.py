@@ -390,6 +390,66 @@ def _drop_fenced_next_steps(items: Sequence[str], note: str) -> list[str]:
     return [item for item in texts if normalize_task_text(item) not in fenced]
 
 
+_HTML_BLOCK_RE = re.compile(
+    r"^[ ]{0,3}</?(?:address|article|aside|base|basefont|blockquote|body|"
+    r"caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|"
+    r"figcaption|figure|footer|form|frame|frameset|h[1-6]|head|header|hr|html|"
+    r"iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|"
+    r"p|param|search|section|summary|table|tbody|td|tfoot|th|thead|title|tr|"
+    r"track|ul)(?:[\t />]|$)",
+    re.IGNORECASE,
+)
+
+
+def _outside_heading(line: str, in_fence: bool) -> str | None:
+    """Return an ATX heading title when the line is outside a fence."""
+    if in_fence or heading_level(line) != 2:
+        return None
+    return heading_title(line)
+
+
+def _remember_html_bullet(line: str, in_next: bool, keys: set[str]) -> bool:
+    """Collect a Next Steps bullet inside an HTML block. End the block on a blank line."""
+    if not line.strip():
+        return False
+    if in_next:
+        for item in parse_bullets(line):
+            keys.add(normalize_task_text(item))
+    return True
+
+
+def _html_block_next_step_keys(note: str) -> set[str]:
+    """Return normalized texts of bullets that sit inside a Next Steps HTML block."""
+    keys: set[str] = set()
+    in_fence = False
+    in_next = False
+    in_html = False
+    for line in note.splitlines():
+        if _fence_marker(line):
+            in_fence = not in_fence
+            in_html = False
+            continue
+        if in_html:
+            in_html = _remember_html_bullet(line, in_next, keys)
+            continue
+        title = _outside_heading(line, in_fence)
+        if title is not None:
+            in_next = title == "next steps"
+            continue
+        if not in_fence and _HTML_BLOCK_RE.match(line):
+            in_html = True
+    return keys
+
+
+def _drop_html_block_next_steps(items: Sequence[str], note: str) -> list[str]:
+    """Drop Next Steps items that only appear inside an HTML block."""
+    hidden = _html_block_next_step_keys(note)
+    texts = [str(item) for item in items]
+    if not hidden:
+        return texts
+    return [item for item in texts if normalize_task_text(item) not in hidden]
+
+
 _HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 
 
@@ -989,8 +1049,11 @@ class Vault:
             return parse_project_state("")
         raw = self._read_text(path)
         parsed = parse_project_state(_open_headings(_promote_setext(raw)))
-        parsed["next_steps"] = _drop_fenced_next_steps(
-            _drop_checked_next_steps(parsed["next_steps"], raw),
+        parsed["next_steps"] = _drop_html_block_next_steps(
+            _drop_fenced_next_steps(
+                _drop_checked_next_steps(parsed["next_steps"], raw),
+                raw,
+            ),
             raw,
         )
         return parsed
