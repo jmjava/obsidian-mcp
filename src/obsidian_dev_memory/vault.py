@@ -93,6 +93,13 @@ def _public_text(text: str) -> str:
     return redact_secrets(_shield_bearer_value(text))
 
 
+def _redacted_heading(heading: str | None) -> str | None:
+    """Redact a heading before it is stored as a section title."""
+    if heading is None:
+        return None
+    return _public_text(heading)
+
+
 def _read_utf8(path: Path) -> str:
     """Read a note as UTF-8, or refuse bytes that are not text."""
     try:
@@ -1477,7 +1484,7 @@ class Vault:
                 updated = append_under_heading(
                     existing,
                     _shield_bearer_value(content),
-                    heading,
+                    _redacted_heading(heading),
                 )
             except HeadingMatchError as exc:
                 raise VaultError(str(exc)) from exc
