@@ -516,6 +516,24 @@ def test_append_daily_note_redacts_aws_access_key_before_write(tmp_path: Path) -
     assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
 
 
+def test_daily_heading_is_redacted_before_it_is_stored(tmp_path: Path) -> None:
+    """A daily heading must not keep text the note body would redact."""
+    vault = make_vault(tmp_path)
+    marker = "fixturehunter2"
+    written = vault.append_daily_note(
+        "Ship the guide",
+        heading=f"Rotate password={marker}",
+        date="2026-08-22",
+        now=STAMP,
+    )
+    stored = (vault.root / written.path).read_text(encoding="utf-8")
+    assert marker not in stored
+    assert SECRET_PLACEHOLDER in stored
+    assert "Ship the guide" in stored
+    assert marker not in vault.read_note(written.path)["content"]
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
 def test_append_daily_note_usage_does_not_splice_under_burn_plan_when_later_usage_exists(
     tmp_path: Path,
 ) -> None:
