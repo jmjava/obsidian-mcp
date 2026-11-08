@@ -239,6 +239,35 @@ def _set_note_status(note: str, status: str) -> str:
     return _clear_duplicate_status(set_frontmatter_field(note, "status", status), status)
 
 
+_CHECKED_NEXT_STEP_RE = re.compile(r"^[-*+]\s+\[[xX]\]\s+(.*\S)\s*$")
+
+
+def _checked_next_step_keys(note: str) -> set[str]:
+    """Return normalized texts of checked boxes under Next Steps."""
+    keys: set[str] = set()
+    in_section = False
+    for line in note.splitlines():
+        if heading_level(line) == 2:
+            in_section = heading_title(line) == "next steps"
+            continue
+        if not in_section:
+            continue
+        match = _CHECKED_NEXT_STEP_RE.match(line)
+        if match is None:
+            continue
+        keys.add(normalize_task_text(match.group(1)))
+    return keys
+
+
+def _drop_checked_next_steps(items: Sequence[str], note: str) -> list[str]:
+    """Drop Next Steps items that are already checked off."""
+    checked = _checked_next_step_keys(note)
+    texts = [str(item) for item in items]
+    if not checked:
+        return texts
+    return [item for item in texts if normalize_task_text(item) not in checked]
+
+
 def _without_matched_task(items: Sequence[str], task: str) -> list[str]:
     """Drop open copies of a task that has been completed."""
     needle = normalize_task_text(task)
@@ -563,7 +592,7 @@ class Vault:
         state_path = self.project_state_path(project)
         if not (state_path.exists() and state_path.is_file()):
             return
-        parsed = parse_project_state(self._read_text(state_path))
+        parsed = self._load_project_state(project)
         rel = self.relative_path(state_path)
         for item in parsed["next_steps"]:
             text = _public_text(str(item))
@@ -828,7 +857,10 @@ class Vault:
         path = self.project_state_path(project)
         if not path.exists() or not path.is_file():
             return parse_project_state("")
-        return parse_project_state(self._read_text(path))
+        raw = self._read_text(path)
+        parsed = parse_project_state(raw)
+        parsed["next_steps"] = _drop_checked_next_steps(parsed["next_steps"], raw)
+        return parsed
 
     def _exact_task_match(self, items: Sequence[str], query: str) -> str | None:
         needle = normalize_task_text(query)
