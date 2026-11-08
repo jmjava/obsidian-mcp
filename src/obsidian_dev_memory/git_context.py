@@ -25,7 +25,8 @@ def collect_git_context(repository_path: str | Path | None) -> GitInfo | None:
     Failures are non-fatal. File contents, diffs, secrets, and environment
     variables are never included. A repository ``core.fsmonitor`` command
     is not executed. The snapshot does not update the Git index. An ambient
-    ``GIT_DIR`` does not select a different repository.
+    ``GIT_DIR`` does not select a different repository. An ambient
+    ``GIT_WORK_TREE`` does not replace the requested working tree.
     """
     if repository_path is None:
         return None
@@ -68,9 +69,10 @@ def collect_git_context(repository_path: str | Path | None) -> GitInfo | None:
 
 
 def _git_subprocess_env() -> dict[str, str]:
-    """Use the requested working tree instead of an ambient ``GIT_DIR``."""
+    """Use the requested working tree instead of ambient Git location variables."""
     env = os.environ.copy()
     env.pop("GIT_DIR", None)
+    env.pop("GIT_WORK_TREE", None)
     return env
 
 
