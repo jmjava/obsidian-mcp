@@ -161,6 +161,11 @@ def _state_sequence(items: Sequence[str] | None) -> Sequence[str] | None:
     return [_state_list_item(str(item)) for item in items]
 
 
+def _state_title(title: str) -> str:
+    """Redact an extra section title before it is stored as a heading."""
+    return _public_text(_state_text(title) or "")
+
+
 def _state_extras(
     sections: Sequence[tuple[str, str]] | None,
 ) -> Sequence[tuple[str, str]] | None:
@@ -168,7 +173,7 @@ def _state_extras(
         return sections
     rendered: list[tuple[str, str]] = []
     for title, body in sections:
-        rendered.append((_state_text(str(title)) or "", _state_text(str(body)) or ""))
+        rendered.append((_state_title(str(title)), _state_text(str(body)) or ""))
     return rendered
 
 
