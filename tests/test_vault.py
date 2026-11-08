@@ -138,6 +138,24 @@ def test_project_state_field_cannot_invent_a_section(tmp_path: Path) -> None:
     assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
 
 
+def test_extra_section_title_is_redacted_before_it_is_stored(tmp_path: Path) -> None:
+    """An extra project-state heading must not keep text the body would remove."""
+    vault = make_vault(tmp_path)
+    marker = "fixturehunter2"
+    written = vault.update_project_state(
+        "spring-auth",
+        extra_sections=[(f"Rotate password={marker}", "Ship the guide")],
+        now=STAMP,
+    )
+    stored = (vault.root / written.path).read_text(encoding="utf-8")
+    assert marker not in stored
+    assert SECRET_PLACEHOLDER in stored
+    assert "Ship the guide" in stored
+    assert marker not in vault.read_note(written.path)
+    assert vault.search_memory(marker) == []
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
 def test_list_item_cannot_smuggle_another_task(tmp_path: Path) -> None:
     """One list item must not turn into a second open task."""
     vault = make_vault(tmp_path)
