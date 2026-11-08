@@ -463,6 +463,90 @@ def _drop_html_block_next_steps(items: Sequence[str], note: str) -> list[str]:
     return [item for item in texts if normalize_task_text(item) not in hidden]
 
 
+def _visible_next_steps(raw: str) -> list[str]:
+    """Open Next Steps bullets, excluding examples the list filters drop."""
+    parsed = parse_project_state(_open_headings(_promote_setext(raw)))
+    steps = parsed["next_steps"]
+    if not isinstance(steps, list):
+        return []
+    return _drop_html_block_next_steps(
+        _drop_fenced_next_steps(
+            _drop_checked_next_steps([str(item) for item in steps], raw),
+            raw,
+        ),
+        raw,
+    )
+
+
+def _kept_next_steps_are_present(raw: str, kept: Sequence[str]) -> bool:
+    """True when every kept step is already an open bullet in the note."""
+    present = {normalize_task_text(item) for item in _visible_next_steps(raw)}
+    return all(normalize_task_text(str(item)) in present for item in kept)
+
+
+def _removed_next_step_keys(raw: str, kept: Sequence[str]) -> set[str]:
+    kept_keys = {normalize_task_text(str(item)) for item in kept}
+    return {
+        normalize_task_text(item)
+        for item in _visible_next_steps(raw)
+        if normalize_task_text(item) not in kept_keys
+    }
+
+
+class _NextStepCursor:
+    """Fence and HTML state while walking a project-state note."""
+
+    def __init__(self) -> None:
+        self.in_fence = False
+        self.in_html = False
+        self.in_next = False
+
+
+def _mark_next_step_line(line: str, cursor: _NextStepCursor) -> None:
+    """Advance the walker. Fence and HTML lines stay in the note."""
+    if _fence_marker(line):
+        cursor.in_fence = not cursor.in_fence
+        cursor.in_html = False
+        return
+    if cursor.in_html:
+        cursor.in_html = bool(line.strip())
+        return
+    if cursor.in_fence:
+        return
+    if heading_level(line) == 2:
+        cursor.in_next = heading_title(line) == "next steps"
+        return
+    if _HTML_BLOCK_RE.match(line):
+        cursor.in_html = True
+
+
+def _drop_this_next_step_line(line: str, cursor: _NextStepCursor, removed: set[str]) -> bool:
+    """True when this open bullet is one the task move took off the list."""
+    if cursor.in_fence or cursor.in_html or not cursor.in_next:
+        return False
+    if _CHECKED_NEXT_STEP_RE.match(line):
+        return False
+    items = parse_bullets(line)
+    if len(items) != 1:
+        return False
+    return normalize_task_text(items[0]) in removed
+
+
+def _drop_open_next_step_lines(note: str, removed: set[str]) -> str:
+    """Delete moved Next Steps bullets without rewriting the rest of the section."""
+    if not removed:
+        return note
+    cursor = _NextStepCursor()
+    kept: list[str] = []
+    for line in note.splitlines():
+        if not _drop_this_next_step_line(line, cursor, removed):
+            kept.append(line)
+        _mark_next_step_line(line, cursor)
+    if note.endswith("\n"):
+        return "\n".join(kept) + "\n"
+    return "\n".join(kept)
+
+
 _HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 
 
@@ -1117,13 +1201,7 @@ class Vault:
             return parse_project_state("")
         raw = self._read_text(path)
         parsed = parse_project_state(_open_headings(_promote_setext(raw)))
-        parsed["next_steps"] = _drop_html_block_next_steps(
-            _drop_fenced_next_steps(
-                _drop_checked_next_steps(parsed["next_steps"], raw),
-                raw,
-            ),
-            raw,
-        )
+        parsed["next_steps"] = _visible_next_steps(raw)
         return parsed
 
     def _exact_task_match(self, items: Sequence[str], query: str) -> str | None:
@@ -1259,11 +1337,45 @@ class Vault:
     ) -> WriteResult:
         """Check the queue, then write state. Reopen the box if state fails."""
         previous = self._store_queue_body(queue_sync)
+        previous_state = self._retain_raw_next_steps(project, parsed)
         try:
             return self.update_project_state(project=project, now=now, **parsed)
         except Exception:
             self._restore_queue_body(previous)
+            self._restore_project_state(project, previous_state)
             raise
+
+    def _retain_raw_next_steps(
+        self,
+        project: str,
+        parsed: dict[str, str | list[str] | list[tuple[str, str]]],
+    ) -> str | None:
+        """Keep example lines when a move rewrites Next Steps from the open list.
+
+        Returns the previous note when this method changes it, so a failed
+        state write can put that note back.
+        """
+        kept = parsed.get("next_steps")
+        if not isinstance(kept, list):
+            return None
+        path = self.project_state_path(project)
+        if not path.is_file():
+            return None
+        raw = self._read_text(path)
+        if not _kept_next_steps_are_present(raw, [str(item) for item in kept]):
+            return None
+        removed = _removed_next_step_keys(raw, [str(item) for item in kept])
+        edited = _drop_open_next_step_lines(raw, removed)
+        parsed.pop("next_steps", None)
+        if edited == raw:
+            return None
+        self._atomic_write(path, edited)
+        return raw
+
+    def _restore_project_state(self, project: str, previous: str | None) -> None:
+        if previous is None:
+            return
+        self._atomic_write(self.project_state_path(project), previous)
 
     def _store_queue_body(self, queue_sync: _QueueSync) -> str | None:
         if queue_sync.body is None:
