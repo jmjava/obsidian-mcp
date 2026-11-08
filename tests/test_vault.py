@@ -1022,6 +1022,31 @@ def test_setext_heading_ends_the_open_list(tmp_path: Path) -> None:
     assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
 
 
+def test_html_block_bullet_is_not_an_open_task(tmp_path: Path) -> None:
+    """A bullet inside an HTML block is an example. The bullet after it stays open."""
+    vault = make_vault(tmp_path)
+    vault.ensure_project("spring-auth")
+    state = vault.project_state_path("spring-auth")
+    original = (
+        "# Project State\n\n"
+        "## Next Steps\n\n"
+        "- Ship the guide\n"
+        "\n"
+        "<div>\n"
+        "- Hidden leftover\n"
+        "</div>\n"
+        "\n"
+        "- Still open\n"
+    )
+    state.write_text(original, encoding="utf-8")
+    listed = vault.list_open_tasks("spring-auth", include_agent_queue=False)
+    assert [task.text for task in listed.tasks] == ["Ship the guide", "Still open"]
+    with pytest.raises(VaultError, match="No matching"):
+        vault.claim_task("spring-auth", "Hidden leftover", now=STAMP)
+    assert state.read_text(encoding="utf-8") == original
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
 def test_claim_task_rejects_missing_and_already_claimed(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     vault.update_project_state(
