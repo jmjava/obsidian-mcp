@@ -296,6 +296,22 @@ def _fence_marker(line: str) -> bool:
     return stripped.startswith("```") or stripped.startswith("~~~")
 
 
+_INDENTED_HEADING_RE = re.compile(r"^[ ]{1,3}(#{1,6}[ \t]+\S.*)$")
+
+
+def _open_headings(text: str) -> str:
+    """Recognize a heading indented by up to three spaces, outside a fence."""
+    lines: list[str] = []
+    in_fence = False
+    for line in text.splitlines():
+        if _fence_marker(line):
+            in_fence = not in_fence
+        elif not in_fence:
+            line = _INDENTED_HEADING_RE.sub(r"\1", line, count=1)
+        lines.append(line)
+    return "\n".join(lines)
+
+
 def _fenced_next_step_keys(note: str) -> set[str]:
     """Return normalized texts of bullets that sit inside a Next Steps fence."""
     keys: set[str] = set()
@@ -922,7 +938,7 @@ class Vault:
         if not path.exists() or not path.is_file():
             return parse_project_state("")
         raw = self._read_text(path)
-        parsed = parse_project_state(raw)
+        parsed = parse_project_state(_open_headings(raw))
         parsed["next_steps"] = _drop_fenced_next_steps(
             _drop_checked_next_steps(parsed["next_steps"], raw),
             raw,
