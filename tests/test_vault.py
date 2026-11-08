@@ -261,6 +261,28 @@ def test_writes_decision_and_avoids_overwrite(tmp_path: Path) -> None:
     assert "numeric suffix" in second.message
 
 
+def test_decision_filename_does_not_keep_a_redacted_title(tmp_path: Path) -> None:
+    """The generated decision path must not keep text the heading redacts."""
+    vault = make_vault(tmp_path)
+    marker = "fixturehunter2"
+    written = vault.record_decision(
+        "spring-auth",
+        title=f"Choose password={marker} later",
+        context="Keep the filename generic.",
+        decision="Slug the redacted title.",
+        now=STAMP,
+    )
+    assert marker not in written.path
+    assert written.path.endswith("Decisions/2026-08-22-choose-redacted-secret-later.md")
+    stored = (vault.root / written.path).read_text(encoding="utf-8")
+    assert marker not in stored
+    assert SECRET_PLACEHOLDER in stored
+    hits = vault.search_memory("Choose", project="spring-auth")
+    assert hits
+    assert all(marker not in hit.path for hit in hits)
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
 def test_reads_note(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     vault.update_project_state("spring-auth", objective="Remember this", now=STAMP)

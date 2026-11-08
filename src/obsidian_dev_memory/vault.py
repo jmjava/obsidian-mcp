@@ -677,7 +677,9 @@ class Vault:
         self.ensure_project(project)
         stamp = local_now(now)
         slug = self.project_slug(project)
-        path, suffix_used = self._unique_decision_path(slug, title, stamp)
+        path, suffix_used = self._unique_decision_path(
+            slug, _public_text(title.strip()), stamp
+        )
         body = join_blocks(
             format_frontmatter(
                 {
