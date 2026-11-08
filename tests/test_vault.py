@@ -978,6 +978,50 @@ def test_indented_heading_ends_the_open_list(tmp_path: Path) -> None:
     assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
 
 
+def test_setext_heading_ends_the_open_list(tmp_path: Path) -> None:
+    """A setext heading ends Next Steps. A divider and a fenced underline do not."""
+    vault = make_vault(tmp_path)
+    vault.ensure_project("spring-auth")
+    state = vault.project_state_path("spring-auth")
+    original = (
+        "---\n"
+        "type: project-state\n"
+        "project: spring-auth\n"
+        "---\n"
+        "\n"
+        "# Project State\n\n"
+        "## Next Steps\n\n"
+        "- Ship the guide\n"
+        "\n"
+        "```\n"
+        "Completed\n"
+        "---------\n"
+        "```\n"
+        "\n"
+        "- Still open\n"
+        "\n"
+        "---\n"
+        "\n"
+        "- Also open\n"
+        "\n"
+        "Completed\n"
+        "---------\n"
+        "\n"
+        "- Hidden leftover\n"
+    )
+    state.write_text(original, encoding="utf-8")
+    listed = vault.list_open_tasks("spring-auth", include_agent_queue=False)
+    assert [task.text for task in listed.tasks] == [
+        "Ship the guide",
+        "Still open",
+        "Also open",
+    ]
+    with pytest.raises(VaultError, match="No matching"):
+        vault.claim_task("spring-auth", "Hidden leftover", now=STAMP)
+    assert state.read_text(encoding="utf-8") == original
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
 def test_claim_task_rejects_missing_and_already_claimed(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     vault.update_project_state(
