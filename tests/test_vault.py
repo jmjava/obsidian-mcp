@@ -1893,6 +1893,31 @@ def test_commented_heading_is_not_the_open_todo(tmp_path: Path) -> None:
     assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
 
 
+def test_frontmatter_checkbox_is_not_an_open_task(tmp_path: Path) -> None:
+    """A checkbox inside TODO frontmatter must not be claimable."""
+    vault = make_vault(tmp_path)
+    note = vault.root / "TODO" / "2026-09-10-docs.md"
+    note.parent.mkdir()
+    original = (
+        "---\n"
+        "status: open\n"
+        "project: spring-auth\n"
+        "- [ ] Hidden leftover\n"
+        "---\n"
+        "\n"
+        "# Real leftover\n"
+        "\n"
+        "- [ ] Ship the guide\n"
+    )
+    note.write_text(original, encoding="utf-8")
+    listed = vault.list_open_tasks("spring-auth", include_agent_queue=False)
+    assert [task.text for task in listed.tasks] == ["Real leftover", "Ship the guide"]
+    with pytest.raises(VaultError, match="No matching"):
+        vault.claim_task("spring-auth", "Hidden leftover", now=STAMP)
+    assert note.read_text(encoding="utf-8") == original
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
 def test_complete_task_clears_a_later_open_status(tmp_path: Path) -> None:
     """A later status field must not keep a completed TODO on the open list."""
     vault = make_vault(tmp_path)
