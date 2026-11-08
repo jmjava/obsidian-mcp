@@ -282,6 +282,40 @@ def _drop_checked_next_steps(items: Sequence[str], note: str) -> list[str]:
     return [item for item in texts if normalize_task_text(item) not in checked]
 
 
+def _fence_marker(line: str) -> bool:
+    """True for a line that opens or closes a fenced code block."""
+    stripped = line.strip()
+    return stripped.startswith("```") or stripped.startswith("~~~")
+
+
+def _fenced_next_step_keys(note: str) -> set[str]:
+    """Return normalized texts of bullets that sit inside a Next Steps fence."""
+    keys: set[str] = set()
+    in_fence = False
+    in_next = False
+    for line in note.splitlines():
+        if _fence_marker(line):
+            in_fence = not in_fence
+            continue
+        if heading_level(line) == 2:
+            in_next = heading_title(line) == "next steps"
+            continue
+        if not in_fence or not in_next:
+            continue
+        for item in parse_bullets(line):
+            keys.add(normalize_task_text(item))
+    return keys
+
+
+def _drop_fenced_next_steps(items: Sequence[str], note: str) -> list[str]:
+    """Drop Next Steps items that only appear inside a code fence."""
+    fenced = _fenced_next_step_keys(note)
+    texts = [str(item) for item in items]
+    if not fenced:
+        return texts
+    return [item for item in texts if normalize_task_text(item) not in fenced]
+
+
 def _without_matched_task(items: Sequence[str], task: str) -> list[str]:
     """Drop open copies of a task that has been completed."""
     needle = normalize_task_text(task)
@@ -873,7 +907,10 @@ class Vault:
             return parse_project_state("")
         raw = self._read_text(path)
         parsed = parse_project_state(raw)
-        parsed["next_steps"] = _drop_checked_next_steps(parsed["next_steps"], raw)
+        parsed["next_steps"] = _drop_fenced_next_steps(
+            _drop_checked_next_steps(parsed["next_steps"], raw),
+            raw,
+        )
         return parsed
 
     def _exact_task_match(self, items: Sequence[str], query: str) -> str | None:
