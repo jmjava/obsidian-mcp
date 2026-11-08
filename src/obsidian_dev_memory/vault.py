@@ -312,6 +312,56 @@ def _open_headings(text: str) -> str:
     return "\n".join(lines)
 
 
+_SETEXT_H2_RE = re.compile(r"^[ ]{0,3}-+[ \t]*$")
+_SETEXT_TEXT_RE = re.compile(r"^[ ]{0,3}(?![-*+>#])\S.*$")
+
+
+def _frontmatter_body_index(lines: list[str]) -> int:
+    """Return the first line index after a leading frontmatter block."""
+    if not lines or lines[0].strip() != "---":
+        return 0
+    for index, line in enumerate(lines[1:], start=1):
+        if line.strip() == "---":
+            return index + 1
+    return 0
+
+
+def _setext_h2_title(line: str, underline: str | None, *, in_fence: bool) -> str | None:
+    """Return an ATX heading when line is a setext h2 outside a fence."""
+    if in_fence or underline is None:
+        return None
+    if _SETEXT_H2_RE.fullmatch(underline) is None:
+        return None
+    if _SETEXT_TEXT_RE.fullmatch(line) is None:
+        return None
+    return "## " + line.strip()
+
+
+def _promote_setext(text: str) -> str:
+    """Turn a setext h2 into an ATX heading so it ends the open section."""
+    lines = text.splitlines()
+    start = _frontmatter_body_index(lines)
+    promoted = list(lines[:start])
+    in_fence = False
+    index = start
+    while index < len(lines):
+        line = lines[index]
+        if _fence_marker(line):
+            in_fence = not in_fence
+            promoted.append(line)
+            index += 1
+            continue
+        nxt = lines[index + 1] if index + 1 < len(lines) else None
+        title = _setext_h2_title(line, nxt, in_fence=in_fence)
+        if title is None:
+            promoted.append(line)
+            index += 1
+            continue
+        promoted.append(title)
+        index += 2
+    return "\n".join(promoted)
+
+
 def _fenced_next_step_keys(note: str) -> set[str]:
     """Return normalized texts of bullets that sit inside a Next Steps fence."""
     keys: set[str] = set()
@@ -938,7 +988,7 @@ class Vault:
         if not path.exists() or not path.is_file():
             return parse_project_state("")
         raw = self._read_text(path)
-        parsed = parse_project_state(_open_headings(raw))
+        parsed = parse_project_state(_open_headings(_promote_setext(raw)))
         parsed["next_steps"] = _drop_fenced_next_steps(
             _drop_checked_next_steps(parsed["next_steps"], raw),
             raw,
