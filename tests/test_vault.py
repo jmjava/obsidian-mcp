@@ -622,6 +622,33 @@ def test_read_and_search_refuse_non_markdown_files_inside_the_vault(tmp_path: Pa
     assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
 
 
+def test_undecodable_note_does_not_break_project_search(tmp_path: Path) -> None:
+    """A note that is not valid UTF-8 is refused and does not hide other notes."""
+    vault = make_vault(tmp_path)
+    vault.capture_work_session(
+        "spring-auth",
+        summary="Indexed session phrase stays searchable",
+        now=STAMP,
+    )
+    bad = (
+        vault.root
+        / "AI Memory"
+        / "Projects"
+        / "spring-auth"
+        / "Sessions"
+        / "bad.md"
+    )
+    payload = b"# Bad\n\xff\n"
+    bad.write_bytes(payload)
+    with pytest.raises(VaultError, match="UTF-8"):
+        vault.read_note("AI Memory/Projects/spring-auth/Sessions/bad.md")
+    indexed = vault.search_memory("Indexed session phrase", project="spring-auth")
+    assert indexed
+    assert all(not hit.path.endswith("bad.md") for hit in indexed)
+    assert bad.read_bytes() == payload
+    assert not (vault.root / "AI Memory" / "Agent Queue.md").exists()
+
+
 def test_project_scope_does_not_follow_symlink_into_another_project_note(
     tmp_path: Path,
 ) -> None:
